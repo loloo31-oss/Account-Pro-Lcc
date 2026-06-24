@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html><!DOCTYPE html>
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
@@ -159,77 +159,10 @@ function setLang(l){lang=l;try{localStorage.setItem('ap-lang',l);}catch(e){}docu
 
 
 // DATA
-var DEF = {
- users:[
-  {id:'admin',name:'Administrator',username:'admin',password:'admin123',role:'admin',active:true,
-   perms:{coa:{v:1,a:1,e:1,d:1},journal:{v:1,a:1,e:1,d:1},invoice:{v:1,a:1,e:1,d:1},receipt:{v:1,a:1,e:1,d:1},payment:{v:1,a:1,e:1,d:1},trial:{v:1},income:{v:1},balance:{v:1},statement:{v:1},agingAR:{v:1},agingAP:{v:1},customers:{v:1,a:1,e:1,d:1},suppliers:{v:1,a:1,e:1,d:1},costcenters:{v:1,a:1,e:1,d:1},ccreport:{v:1},settings:{v:1,e:1},users:{v:1,a:1,e:1,d:1}}}
- ],
- company: {name:'AccountPro LLC',address:'Riyadh, Saudi Arabia',cr:'1234567890',vatNo:'300XXXXXXXXX000003',currency:'SAR',vatRate:15,logo:''},
- accounts: [
-  {id:'1000',name:'Current Assets',type:'Asset',bal:0,normal:'Debit',isMain:true},
-  {id:'1001',name:'Cash on Hand',type:'Asset',bal:30000,normal:'Debit',pid:'1000'},
-  {id:'1002',name:'Bank - Al Rajhi',type:'Asset',bal:20000,normal:'Debit',pid:'1000'},
-  {id:'1003',name:'Accounts Receivable',type:'Asset',bal:18000,normal:'Debit',pid:'1000'},
-  {id:'1500',name:'Non-Current Assets',type:'Asset',bal:0,normal:'Debit',isMain:true},
-  {id:'1501',name:'Equipment',type:'Asset',bal:75000,normal:'Debit',pid:'1500'},
-  {id:'1502',name:'Inventory',type:'Asset',bal:32000,normal:'Debit',pid:'1500'},
-  {id:'2000',name:'Current Liabilities',type:'Liability',bal:0,normal:'Credit',isMain:true},
-  {id:'2001',name:'Accounts Payable',type:'Liability',bal:22000,normal:'Credit',pid:'2000'},
-  {id:'2002',name:'VAT Payable',type:'Liability',bal:5000,normal:'Credit',pid:'2000'},
-  {id:'2500',name:'Non-Current Liabilities',type:'Liability',bal:0,normal:'Credit',isMain:true},
-  {id:'2501',name:'Notes Payable',type:'Liability',bal:30000,normal:'Credit',pid:'2500'},
-  {id:'3000',name:'Owner Equity',type:'Equity',bal:0,normal:'Credit',isMain:true},
-  {id:'3001',name:'Share Capital',type:'Equity',bal:80000,normal:'Credit',pid:'3000'},
-  {id:'3002',name:'Retained Earnings',type:'Equity',bal:20000,normal:'Credit',pid:'3000'},
-  {id:'4000',name:'Revenue',type:'Revenue',bal:0,normal:'Credit',isMain:true},
-  {id:'4001',name:'Sales Revenue',type:'Revenue',bal:95000,normal:'Credit',pid:'4000'},
-  {id:'4002',name:'Service Revenue',type:'Revenue',bal:12000,normal:'Credit',pid:'4000'},
-  {id:'5000',name:'Cost of Goods Sold',type:'Expense',bal:48000,normal:'Debit',isMain:true},
-  {id:'5100',name:'Operating Expenses',type:'Expense',bal:0,normal:'Debit',isMain:true},
-  {id:'5101',name:'Salaries Expense',type:'Expense',bal:24000,normal:'Debit',pid:'5100'},
-  {id:'5102',name:'Rent Expense',type:'Expense',bal:6000,normal:'Debit',pid:'5100'},
-  {id:'5103',name:'Utilities Expense',type:'Expense',bal:2000,normal:'Debit',pid:'5100'}
- ],
- journals:[
-  {id:'JE001',date:'2024-01-15',desc:'Cash sale - Al-Riyadh Trading',lines:[{acc:'1001',dr:11500,cr:0},{acc:'2002',dr:0,cr:1500},{acc:'4001',dr:0,cr:10000}]},
-  {id:'JE002',date:'2024-01-20',desc:'Purchase inventory on credit',lines:[{acc:'1502',dr:8000,cr:0},{acc:'2001',dr:0,cr:8000}]},
-  {id:'JE003',date:'2024-01-25',desc:'Pay monthly salaries',lines:[{acc:'5101',dr:4000,cr:0},{acc:'1001',dr:0,cr:4000}]}
- ],
- invoices:[
-  {id:'INV-001',date:'2024-01-15',client:'Al-Riyadh Trading Co.',clientId:'CUS-001',vatNo:'300123456700003',
-   items:[{desc:'Consulting Services',qty:10,rate:800,vat:15},{desc:'Software License',qty:1,rate:3200,vat:15}],paid:true}
- ],
- customers:[{id:'CUS-001',name:'Al-Riyadh Trading Co.',phone:'+966 11 XXX XXXX',email:'',cr:'1010123456',vatNo:'300123456700003',buildingNo:'1234',street:'King Fahd Road',district:'Al-Olaya',city:'Riyadh',country:'Saudi Arabia',notes:'',linkedAccId:'1003'}],
- suppliers:[{id:'SUP-001',name:'Al-Noor Supplies Ltd.',phone:'+966 12 XXX XXXX',email:'',cr:'4030123456',vatNo:'300987654300003',buildingNo:'5678',street:'Prince Sultan Road',district:'Al-Hamra',city:'Jeddah',country:'Saudi Arabia',notes:'Main supplier',linkedAccId:'2001'}],
- receipts:[],payments:[],exp:{},
- fixedAssets:[],
- assetLocations:[
-  {id:'LOC001',name:'Head Office'},
-  {id:'LOC002',name:'Branch 1'},
-  {id:'LOC003',name:'Warehouse'}
- ],
- assetTransactions:[],
- items:[],
- purchaseInvoices:[],
- salesInvoices2:[],
- costCenters:[
-  {id:'CC001',name:'Administration',nameAr:'Al-Edara',active:true},
-  {id:'CC002',name:'Operations',nameAr:'\u0627\u0644\u0639\u0645\u0644\u064a\u0627\u062a',active:true},
-  {id:'CC003',name:'Sales',nameAr:'\u0627\u0644\u0645\u0628\u064a\u0639\u0627\u062a',active:true}
- ]
-};
+var DEF = {"users":[{"id":"admin","name":"Administrator","username":"admin","role":"admin","active":true,"perms":{"coa":{"v":1,"a":1,"e":1,"d":1},"journal":{"v":1,"a":1,"e":1,"d":1},"invoice":{"v":1,"a":1,"e":1,"d":1},"receipt":{"v":1,"a":1,"e":1,"d":1},"payment":{"v":1,"a":1,"e":1,"d":1},"trial":{"v":1},"income":{"v":1},"balance":{"v":1},"statement":{"v":1},"agingAR":{"v":1},"agingAP":{"v":1},"customers":{"v":1,"a":1,"e":1,"d":1},"suppliers":{"v":1,"a":1,"e":1,"d":1},"costcenters":{"v":1,"a":1,"e":1,"d":1},"ccreport":{"v":1},"settings":{"v":1,"e":1},"users":{"v":1,"a":1,"e":1,"d":1}},"passwordHash":"-g10hvh"}],"company":{"name":"AccountPro LLC","address":"Riyadh, Saudi Arabia","cr":"1234567890","vatNo":"300XXXXXXXXX000003","currency":"SAR","vatRate":15,"logo":""},"accounts":[{"id":"1000","name":"Current Assets","type":"Asset","bal":0,"normal":"Debit","isMain":true},{"id":"1001","name":"Cash on Hand","type":"Asset","bal":30000,"normal":"Debit","pid":"1000"},{"id":"1002","name":"Bank - Al Rajhi","type":"Asset","bal":20000,"normal":"Debit","pid":"1000"},{"id":"1003","name":"Accounts Receivable","type":"Asset","bal":18000,"normal":"Debit","pid":"1000"},{"id":"1500","name":"Non-Current Assets","type":"Asset","bal":0,"normal":"Debit","isMain":true},{"id":"1501","name":"Equipment","type":"Asset","bal":75000,"normal":"Debit","pid":"1500"},{"id":"1502","name":"Inventory","type":"Asset","bal":32000,"normal":"Debit","pid":"1500"},{"id":"2000","name":"Current Liabilities","type":"Liability","bal":0,"normal":"Credit","isMain":true},{"id":"2001","name":"Accounts Payable","type":"Liability","bal":22000,"normal":"Credit","pid":"2000"},{"id":"2002","name":"VAT Payable","type":"Liability","bal":5000,"normal":"Credit","pid":"2000"},{"id":"2500","name":"Non-Current Liabilities","type":"Liability","bal":0,"normal":"Credit","isMain":true},{"id":"2501","name":"Notes Payable","type":"Liability","bal":30000,"normal":"Credit","pid":"2500"},{"id":"3000","name":"Owner Equity","type":"Equity","bal":0,"normal":"Credit","isMain":true},{"id":"3001","name":"Share Capital","type":"Equity","bal":80000,"normal":"Credit","pid":"3000"},{"id":"3002","name":"Retained Earnings","type":"Equity","bal":20000,"normal":"Credit","pid":"3000"},{"id":"4000","name":"Revenue","type":"Revenue","bal":0,"normal":"Credit","isMain":true},{"id":"4001","name":"Sales Revenue","type":"Revenue","bal":95000,"normal":"Credit","pid":"4000"},{"id":"4002","name":"Service Revenue","type":"Revenue","bal":12000,"normal":"Credit","pid":"4000"},{"id":"5000","name":"Cost of Goods Sold","type":"Expense","bal":48000,"normal":"Debit","isMain":true},{"id":"5100","name":"Operating Expenses","type":"Expense","bal":0,"normal":"Debit","isMain":true},{"id":"5101","name":"Salaries Expense","type":"Expense","bal":24000,"normal":"Debit","pid":"5100"},{"id":"5102","name":"Rent Expense","type":"Expense","bal":6000,"normal":"Debit","pid":"5100"},{"id":"5103","name":"Utilities Expense","type":"Expense","bal":2000,"normal":"Debit","pid":"5100"}],"journals":[{"id":"JE001","date":"2024-01-15","desc":"Cash sale - Al-Riyadh Trading","lines":[{"acc":"1001","dr":11500,"cr":0},{"acc":"2002","dr":0,"cr":1500},{"acc":"4001","dr":0,"cr":10000}]},{"id":"JE002","date":"2024-01-20","desc":"Purchase inventory on credit","lines":[{"acc":"1502","dr":8000,"cr":0},{"acc":"2001","dr":0,"cr":8000}]},{"id":"JE003","date":"2024-01-25","desc":"Pay monthly salaries","lines":[{"acc":"5101","dr":4000,"cr":0},{"acc":"1001","dr":0,"cr":4000}]}],"invoices":[{"id":"INV-001","date":"2024-01-15","client":"Al-Riyadh Trading Co.","clientId":"CUS-001","vatNo":"300123456700003","items":[{"desc":"Consulting Services","qty":10,"rate":800,"vat":15},{"desc":"Software License","qty":1,"rate":3200,"vat":15}],"paid":true}],"customers":[{"id":"CUS-001","name":"Al-Riyadh Trading Co.","phone":"+966 11 XXX XXXX","email":"","cr":"1010123456","vatNo":"300123456700003","buildingNo":"1234","street":"King Fahd Road","district":"Al-Olaya","city":"Riyadh","country":"Saudi Arabia","notes":"","linkedAccId":"1003"}],"suppliers":[{"id":"SUP-001","name":"Al-Noor Supplies Ltd.","phone":"+966 12 XXX XXXX","email":"","cr":"4030123456","vatNo":"300987654300003","buildingNo":"5678","street":"Prince Sultan Road","district":"Al-Hamra","city":"Jeddah","country":"Saudi Arabia","notes":"Main supplier","linkedAccId":"2001"}],"receipts":[],"payments":[],"exp":{"1000":true,"1500":true,"2000":true,"2500":true,"3000":true,"4000":true,"5000":true,"5100":true},"fixedAssets":[],"assetLocations":[{"id":"LOC001","name":"Head Office"},{"id":"LOC002","name":"Branch 1"},{"id":"LOC003","name":"Warehouse"}],"assetTransactions":[],"items":[],"purchaseInvoices":[],"salesInvoices2":[],"costCenters":[{"id":"CC001","name":"Administration","nameAr":"Al-Edara","active":true},{"id":"CC002","name":"Operations","nameAr":"العمليات","active":true},{"id":"CC003","name":"Sales","nameAr":"المبيعات","active":true}]};
 
-var db=null;
-var fbRef=null;
-var FB_CONFIG={
- apiKey:"AIzaSyBi0ac-BIAl1M8DvCuAZRORF5HzIm0m89k",
- authDomain:"account-pro-d511d.firebaseapp.com",
- databaseURL:"https://account-pro-d511d-default-rtdb.asia-southeast1.firebasedatabase.app",
- projectId:"account-pro-d511d",
- storageBucket:"account-pro-d511d.firebasestorage.app",
- messagingSenderId:"63478300303",
- appId:"1:63478300303:web:a44d0207835c4e7ad47afa"
-};
+var db;
+
 var HAS_CLOUD=false;
 try{
  if(typeof firebase!=='undefined'){
@@ -3892,10 +3825,4 @@ loadDB().then(function(loaded){
   });
  }
 }).catch(function(e){
- document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load data: '+e.message+'</div>';
-});
-})();
-
-</script>
-</body>
-</html>
+ document.getElementById('app').innerHTML='<div style="padding:30px;color:
