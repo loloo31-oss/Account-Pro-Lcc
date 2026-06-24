@@ -1388,7 +1388,8 @@ function pItems(){
     if(si.type==='return')bq+=l.qty;else bq=Math.max(0,bq-l.qty);
    });
   });
-  it.qty=bq;it.avgCost=ac;
+  // Keep manual qty if no invoice data
+  if(bq===0&&(it.qty||0)>0){/* keep existing qty */}else{it.qty=bq;it.avgCost=ac;}
  });
  var totalVal=(db.items||[]).reduce(function(s,it){return s+(it.qty||0)*(it.avgCost||0);},0);
  h+='<div class="mets">'
@@ -1511,9 +1512,14 @@ function pStockRpt(){
     else balQty=Math.max(0,balQty-l.qty);
    });
   });
-  // Sync live item data
-  it.qty=balQty;
-  it.avgCost=avgC;
+  // Sync: if no posted invoices but item has qty, keep item's qty
+  if(balQty===0&&(it.qty||0)>0){
+   balQty=it.qty||0;
+   avgC=it.avgCost||0;
+  } else {
+   it.qty=balQty;
+   it.avgCost=avgC;
+  }
   var val=balQty*avgC;
   tIn+=qIn;tOut+=qOut;tVal+=val;
   var low=it.reorderQty&&balQty<=it.reorderQty;
@@ -1665,7 +1671,7 @@ function makeZATCAQR(sellerName,vatNo,dateStr,total,vat){
  var raw=tlv(1,sellerName)+tlv(2,vatNo)+tlv(3,dateStr+'T00:00:00Z')+tlv(4,(+total).toFixed(2))+tlv(5,(+vat).toFixed(2));
  var b64=btoa(unescape(encodeURIComponent(raw)));
  // Generate QR image URL using QRJS
- try{return QRJS.encode(b64,3);}catch(e){return '';}
+ try{return QRJS.encode(b64,2);}catch(e){try{return QRJS.encode(b64,3);}catch(e2){return '';}}
 }
 
 function printSalesInvoice(siId){
@@ -1728,7 +1734,7 @@ function printSalesInvoice(siId){
   +'<div style="margin-bottom:6px"><div class="badge">'+(isReturn?'CREDIT NOTE / إشعار دائن':'TAX INVOICE / فاتورة ضريبية')+'</div></div>'
   +'<p style="margin:8px 0 2px;font-size:13pt;font-weight:700">'+si.id+'</p>'
   +'<p style="margin:2px 0;color:#555;font-size:9pt">Date: '+si.date+'</p>'
-  +(qrImg?'<div style="margin-top:12px;display:flex;flex-direction:column;align-items:center">'+'<img src="'+qrImg+'" style="width:120px;height:120px;border:1px solid #eee;padding:4px;background:#fff">'+'<div style="font-size:7pt;color:#666;margin-top:4px;text-align:center;line-height:1.4">ZATCA Compliant<br>\u0641\u0627\u062a\u0648\u0631\u0629 \u0636\u0631\u064a\u0628\u064a\u0629</div></div>':'')
+  +(qrImg?'<div style="margin-top:12px;display:flex;flex-direction:column;align-items:center">'+'<img src="'+qrImg+'" style="width:180px;height:180px;border:2px solid #222;padding:6px;background:#fff">'+'<div style="font-size:7pt;color:#666;margin-top:4px;text-align:center;line-height:1.4">ZATCA Compliant<br>\u0641\u0627\u062a\u0648\u0631\u0629 \u0636\u0631\u064a\u0628\u064a\u0629</div></div>':'')
   +'</div></div>'
   // Bill To
   +'<div class="grid2">'
@@ -3811,14 +3817,4 @@ loadDB().then(function(loaded){
    try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
    restoreSession();render();
    var el=document.getElementById('sv');
-   if(el)el.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
-  });
- }
-}).catch(function(e){
- document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load data: '+e.message+'</div>';
-});
-})();
-
-</script>
-</body>
-</html>
+   if(el)el.textCon
