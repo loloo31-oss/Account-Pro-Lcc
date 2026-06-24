@@ -1,4 +1,4 @@
-<!DOCTYPE html><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
@@ -717,18 +717,8 @@ function doLogout(){
  render();
 }
 
-function restoreSession(){
- try{
-  var sess=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');
-  if(!sess)return false;
-  // Session expires after 8 hours
-  if(Date.now()-sess.ts>8*3600*1000){localStorage.removeItem(AUTH_KEY);return false;}
-  if(sess.id==='admin'){CURRENT_USER=Object.assign({},DEFAULT_ADMIN);return true;}
-  var u=(db.users||[]).find(function(x){return x.id===sess.id&&x.active;});
-  if(u){CURRENT_USER=u;return true;}
- }catch(e){}
- return false;
-}
+function restoreSession_old(){return false;}
+
 
 // ── Login screen ──────────────────────────────────────
 function buildLogin(){
@@ -3819,10 +3809,16 @@ loadDB().then(function(loaded){
    if(skipNextRemote){skipNextRemote=false;return;}
    db=normalizeDB(val);
    try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
-   restoreSession();if(!restoreSession()){}render();
+   restoreSession();render();
    var el=document.getElementById('sv');
    if(el)el.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
   });
  }
 }).catch(function(e){
- document.getElementById('app').innerHTML='<div style="padding:30px;color:
+ document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load data: '+e.message+'</div>';
+});
+})();
+
+</script>
+</body>
+</html>
