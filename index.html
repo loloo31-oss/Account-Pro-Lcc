@@ -653,71 +653,15 @@ return {encode:encode};
 // ══════════════════════════════════════════════════════
 // AUTH SYSTEM - Users & Permissions
 // ══════════════════════════════════════════════════════
-var CURRENT_USER = null; // logged in user object
-var AUTH_KEY = 'ap_auth'; // localStorage key for session
-
-// Default admin user (always exists)
-var DEFAULT_ADMIN = {
- id:'admin',
- username:'admin',
- password:'admin123',
- name:'Administrator',
- role:'admin',
- active:true,
- perms:null // null = full access
-};
-
-function getUsers(){
- var u=db.users||[];
- return u;
-}
-
-function getUserPerms(user){
- if(!user||user.role==='admin')return null; // null = full access
- return user.perms||{};
-}
-
+var CURRENT_USER = null; // synced with currentUser in render()
+var AUTH_KEY = 'ap_auth';
+var DEFAULT_ADMIN = {id:'admin',username:'admin',password:'admin123',name:'Administrator',role:'admin',active:true,perms:null};
+function getUsers(){return db.users||[];}
+function getUserPerms(user){if(!user||user.role==='admin')return null;return user.perms||{};}
 function canDo(module,action){var actMap={view:'v',add:'a',edit:'e','delete':'d'};return can(module,actMap[action]||action);}
+function hashPwd(s){var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return Math.abs(h).toString(36);}
+function doLogout(){currentUser=null;clearSession();render();}
 
-function hashPwd(s){
- // Simple hash - not cryptographic but sufficient for local app
- var h=0;
- for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}
- return Math.abs(h).toString(36);
-}
-
-function doLogin(username,password){
- var uname=(username||'').trim().toLowerCase();
- var pwd=password||'';
- // Check admin
- if(uname===DEFAULT_ADMIN.username&&hashPwd(pwd)===hashPwd(DEFAULT_ADMIN.password)||
-    uname===DEFAULT_ADMIN.username&&pwd===DEFAULT_ADMIN.password){
-  CURRENT_USER=Object.assign({},DEFAULT_ADMIN);
-  localStorage.setItem(AUTH_KEY,JSON.stringify({id:'admin',ts:Date.now()}));
-  return true;
- }
- // Check db users
- var found=null;
- (db.users||[]).forEach(function(u){
-  if(u.username.toLowerCase()===uname&&u.active){
-   if(u.password===hashPwd(pwd)||u.password===pwd)found=u;
-  }
- });
- if(found){
-  CURRENT_USER=found;
-  localStorage.setItem(AUTH_KEY,JSON.stringify({id:found.id,ts:Date.now()}));
-  return true;
- }
- return false;
-}
-
-function doLogout(){
- CURRENT_USER=null;
- localStorage.removeItem(AUTH_KEY);
- render();
-}
-
-function restoreSession_old(){return false;}
 
 
 // ── Login screen ──────────────────────────────────────
@@ -887,7 +831,7 @@ function importCoA(){
    normal: a.normal,
    bal: 0,
    isMain: a.isMain,
-   pid: a.pid || undefined
+   pid: a.pid
   };
  });
  // Clean up undefined pid
@@ -3817,4 +3761,14 @@ loadDB().then(function(loaded){
    try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
    restoreSession();render();
    var el=document.getElementById('sv');
-   if(el)el.textCon
+   if(el)el.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
+  });
+ }
+}).catch(function(e){
+ document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load data: '+e.message+'</div>';
+});
+})();
+
+</script>
+</body>
+</html>
