@@ -209,6 +209,9 @@ var DEF = {
   {id:'LOC003',name:'Warehouse'}
  ],
  assetTransactions:[],
+ items:[],
+ purchaseInvoices:[],
+ salesInvoices2:[],
  costCenters:[
   {id:'CC001',name:'Administration',nameAr:'Al-Edara',active:true},
   {id:'CC002',name:'Operations',nameAr:'\u0627\u0644\u0639\u0645\u0644\u064a\u0627\u062a',active:true},
@@ -243,6 +246,10 @@ function normalizeDB(d){
  if(!d.receipts)d.receipts=[];
  if(!d.payments)d.payments=[];
  if(!d.costCenters)d.costCenters=[];
+ if(!d.items)d.items=[];
+ if(!d.purchaseInvoices)d.purchaseInvoices=[];
+ if(!d.salesInvoices2)d.salesInvoices2=[];
+ d.items.forEach(function(it){if(it.qty===undefined)it.qty=0;if(it.avgCost===undefined)it.avgCost=0;});
  if(!d.fixedAssets)d.fixedAssets=[];
  if(!d.assetLocations)d.assetLocations=[{id:'LOC001',name:'Head Office'},{id:'LOC002',name:'Branch 1'}];
  if(!d.assetTransactions)d.assetTransactions=[];
@@ -303,7 +310,8 @@ function fmt(n){return (db.company.currency||'SAR')+' '+N(n);}
 function cur(){return db.company.currency||'SAR';}
 function vatR(){return Number(db.company.vatRate)||15;}
 function today(){return new Date().toISOString().slice(0,10);}
-function aName(id){var a=db.accounts.find(function(x){return x.id===id;});return a?a.name:id;}
+function accN(a){return (lang==='ar'&&a&&a.nameAr)?a.nameAr:a?a.name:'';}
+function aName(id){var a=db.accounts.find(function(x){return x.id===id;});if(!a)return id;return (lang==='ar'&&a.nameAr)?a.nameAr:a.name;}
 function leafAccs(){return db.accounts.filter(function(a){if(a.isMain)return !db.accounts.some(function(s){return s.pid===a.id;});return true;});}
 function mainBal(id){return db.accounts.filter(function(s){return s.pid===id;}).reduce(function(s,x){return s+x.bal;},0);}
 function nextJE(){return 'JE'+String(db.journals.length+1).padStart(3,'0');}
@@ -941,6 +949,31 @@ function restoreSession(){
   currentUser=user;return true;
  }catch(e){return false;}
 }
+
+// ── Chart of Accounts Import ─────────────────────────────────
+var COA_IMPORT = [{"id":"11","name":"Current Assets","nameAr":"الأصول المتداولة","type":"Asset","normal":"Debit","bal":0,"isMain":true},{"id":"1101","name":"Cash and Cash Equivalents","nameAr":"النقدية وما يعادلها","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"11"},{"id":"1101-01","name":"Petty Cash","nameAr":"الصندوق","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1101"},{"id":"1101-02","name":"Bank - Current Account","nameAr":"البنك - الحساب الجاري","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1101"},{"id":"1101-03","name":"Bank - Savings Account","nameAr":"البنك - حساب التوفير","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1101"},{"id":"1101-04","name":"Checks Under Collection","nameAr":"شيكات تحت التحصيل","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1101"},{"id":"1102","name":"Short-Term Investments","nameAr":"الاستثمارات قصيرة الأجل","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"11"},{"id":"1102-01","name":"Marketable Securities","nameAr":"أوراق مالية متداولة","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1102"},{"id":"1102-02","name":"Short-Term Deposits","nameAr":"ودائع لأجل قصير","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1102"},{"id":"1103","name":"Accounts Receivable","nameAr":"الذمم المدينة / حسابات القبض","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"11"},{"id":"1103-01","name":"Local Customers","nameAr":"العملاء - محليون","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1103"},{"id":"1103-02","name":"Foreign Customers","nameAr":"العملاء - خارجيون","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1103"},{"id":"1103-03","name":"Allowance for Doubtful Accounts","nameAr":"مخصص الديون المشكوك بها","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1103"},{"id":"1103-04","name":"Notes Receivable","nameAr":"أوراق القبض","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1103"},{"id":"1104","name":"Inventory","nameAr":"المخزون","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"11"},{"id":"1104-01","name":"Merchandise Inventory","nameAr":"مخزون البضاعة","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1104"},{"id":"1104-02","name":"Raw Materials","nameAr":"مواد خام","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1104"},{"id":"1104-03","name":"Work in Progress (WIP)","nameAr":"إنتاج تحت التشغيل","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1104"},{"id":"1104-04","name":"Finished Goods","nameAr":"بضاعة تامة الصنع","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1104"},{"id":"1104-05","name":"Inventory Obsolescence Allowance","nameAr":"مخصص هبوط قيمة المخزون","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1104"},{"id":"1105","name":"Prepaid Expenses & Advances","nameAr":"المدفوعات المقدمة والمصاريف المدفوعة مقدماً","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"11"},{"id":"1105-01","name":"Prepaid Expenses","nameAr":"مصروفات مدفوعة مقدماً","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1105"},{"id":"1105-02","name":"Employee Advances","nameAr":"سلف للموظفين","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1105"},{"id":"1105-03","name":"VAT Input Tax Recoverable","nameAr":"ضريبة القيمة المضافة - مدخلات (VAT)","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1105"},{"id":"1105-04","name":"Advances to Suppliers","nameAr":"دفعات مقدمة للموردين","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1105"},{"id":"12","name":"Non-Current Assets","nameAr":"الأصول غير المتداولة","type":"Asset","normal":"Debit","bal":0,"isMain":true},{"id":"1201","name":"Property, Plant & Equipment (PP&E)","nameAr":"الممتلكات والمصانع والمعدات","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"12"},{"id":"1201-01","name":"Land","nameAr":"الأراضي","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-02","name":"Buildings & Structures","nameAr":"المباني والإنشاءات","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-03","name":"Accumulated Dep. - Buildings","nameAr":"م. إهلاك المباني","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-04","name":"Machinery & Equipment","nameAr":"الآلات والمعدات","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-05","name":"Accumulated Dep. - Machinery","nameAr":"م. إهلاك الآلات والمعدات","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-06","name":"Vehicles","nameAr":"السيارات والمركبات","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-07","name":"Accumulated Dep. - Vehicles","nameAr":"م. إهلاك السيارات","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-08","name":"Furniture & Fixtures","nameAr":"الأثاث والتجهيزات","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-09","name":"Accumulated Dep. - Furniture","nameAr":"م. إهلاك الأثاث","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-10","name":"Computer & IT Equipment","nameAr":"أجهزة الحاسوب والتقنية","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-11","name":"Accumulated Dep. - IT Equipment","nameAr":"م. إهلاك الحاسوب","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1201"},{"id":"1201-12","name":"Assets Under Construction","nameAr":"أصول قيد الإنشاء","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1201"},{"id":"1202","name":"Intangible Assets","nameAr":"الأصول غير الملموسة","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"12"},{"id":"1202-01","name":"Goodwill","nameAr":"الشهرة (العملاء)","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1202"},{"id":"1202-02","name":"Trademarks & Patents","nameAr":"العلامات التجارية وبراءات الاختراع","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1202"},{"id":"1202-03","name":"Software & Licenses","nameAr":"برامج الحاسوب والتراخيص","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1202"},{"id":"1202-04","name":"Accumulated Amortization - Intangibles","nameAr":"م. إطفاء الأصول غير الملموسة","type":"Asset","normal":"Credit","bal":0,"isMain":false,"pid":"1202"},{"id":"1203","name":"Long-Term Investments","nameAr":"الاستثمارات طويلة الأجل","type":"Asset","normal":"Debit","bal":0,"isMain":true,"pid":"12"},{"id":"1203-01","name":"Investments in Associates","nameAr":"استثمارات في شركات زميلة","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1203"},{"id":"1203-02","name":"Long-Term Securities","nameAr":"استثمارات في أوراق مالية","type":"Asset","normal":"Debit","bal":0,"isMain":false,"pid":"1203"},{"id":"21","name":"Current Liabilities","nameAr":"الخصوم المتداولة","type":"Liability","normal":"Credit","bal":0,"isMain":true},{"id":"2101","name":"Accounts Payable","nameAr":"الذمم الدائنة / حسابات الدفع","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"21"},{"id":"2101-01","name":"Local Suppliers","nameAr":"الموردون - محليون","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2101"},{"id":"2101-02","name":"Foreign Suppliers","nameAr":"الموردون - خارجيون","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2101"},{"id":"2101-03","name":"Notes Payable","nameAr":"أوراق الدفع","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2101"},{"id":"2102","name":"Accrued Expenses","nameAr":"المصروفات المستحقة","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"21"},{"id":"2102-01","name":"Accrued Salaries & Wages","nameAr":"رواتب وأجور مستحقة","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2102"},{"id":"2102-02","name":"Accrued Interest Payable","nameAr":"فوائد مستحقة الدفع","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2102"},{"id":"2102-03","name":"Other Accrued Expenses","nameAr":"مصروفات مستحقة أخرى","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2102"},{"id":"2103","name":"VAT Output Tax Payable","nameAr":"ضريبة القيمة المضافة - مخرجات (VAT)","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"21"},{"id":"2103-01","name":"VAT Collected (Output)","nameAr":"ضريبة القيمة المضافة المحصلة","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2103"},{"id":"2103-02","name":"Income Tax Payable","nameAr":"ضريبة دخل مستحقة","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2103"},{"id":"2104","name":"Deferred Revenue & Customer Advances","nameAr":"الإيرادات المؤجلة والمقدمات","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"21"},{"id":"2104-01","name":"Customer Deposits/Advances","nameAr":"مقدمات العملاء","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2104"},{"id":"2104-02","name":"Deferred Revenue","nameAr":"إيرادات مؤجلة","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2104"},{"id":"2105","name":"Short-Term Loans & Overdrafts","nameAr":"القروض قصيرة الأجل","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"21"},{"id":"2105-01","name":"Short-Term Bank Loans","nameAr":"قروض بنكية قصيرة الأجل","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2105"},{"id":"2105-02","name":"Bank Overdraft","nameAr":"مكشوف بنكي","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2105"},{"id":"22","name":"Non-Current Liabilities","nameAr":"الخصوم غير المتداولة","type":"Liability","normal":"Credit","bal":0,"isMain":true},{"id":"2201","name":"Long-Term Loans","nameAr":"القروض طويلة الأجل","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"22"},{"id":"2201-01","name":"Long-Term Bank Loans","nameAr":"قروض بنكية طويلة الأجل","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2201"},{"id":"2201-02","name":"Bonds Payable","nameAr":"سندات قابلة للإصدار","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2201"},{"id":"2202","name":"End-of-Service Benefits Provision","nameAr":"مخصص مكافأة نهاية الخدمة","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"22"},{"id":"2202-01","name":"Employee Terminal Benefits Provision","nameAr":"مخصص مكافأة نهاية الخدمة","type":"Liability","normal":"Credit","bal":0,"isMain":false,"pid":"2202"},{"id":"2203","name":"Deferred Tax Liabilities","nameAr":"الضرائب المؤجلة","type":"Liability","normal":"Credit","bal":0,"isMain":true,"pid":"22"},{"id":"31","name":"Capital & Reserves","nameAr":"رأس المال والاحتياطيات","type":"Equity","normal":"Credit","bal":0,"isMain":true},{"id":"3101","name":"Paid-Up Capital","nameAr":"رأس المال المدفوع","type":"Equity","normal":"Credit","bal":0,"isMain":true,"pid":"31"},{"id":"3101-01","name":"Shareholders' Capital","nameAr":"رأس مال المساهمين","type":"Equity","normal":"Credit","bal":0,"isMain":false,"pid":"3101"},{"id":"3102","name":"Reserves","nameAr":"الاحتياطيات","type":"Equity","normal":"Credit","bal":0,"isMain":true,"pid":"31"},{"id":"3102-01","name":"Legal Reserve","nameAr":"احتياطي قانوني","type":"Equity","normal":"Credit","bal":0,"isMain":false,"pid":"3102"},{"id":"3102-02","name":"Optional Reserve","nameAr":"احتياطي اختياري","type":"Equity","normal":"Credit","bal":0,"isMain":false,"pid":"3102"},{"id":"3102-03","name":"Share Premium","nameAr":"علاوة إصدار الأسهم","type":"Equity","normal":"Credit","bal":0,"isMain":false,"pid":"3102"},{"id":"3103","name":"Retained Earnings / Accumulated Losses","nameAr":"الأرباح المبقاة / الخسائر المتراكمة","type":"Equity","normal":"Credit","bal":0,"isMain":true,"pid":"31"},{"id":"3103-01","name":"Retained Earnings","nameAr":"أرباح مبقاة","type":"Equity","normal":"Credit","bal":0,"isMain":false,"pid":"3103"},{"id":"3103-02","name":"Proposed Dividends","nameAr":"توزيعات أرباح مقترحة","type":"Equity","normal":"Debit","bal":0,"isMain":false,"pid":"3103"},{"id":"3104","name":"Net Profit / Loss for the Period","nameAr":"صافي الربح / الخسارة للفترة","type":"Equity","normal":"Credit","bal":0,"isMain":true,"pid":"31"},{"id":"41","name":"Operating Revenues","nameAr":"إيرادات التشغيل","type":"Revenue","normal":"Credit","bal":0,"isMain":true},{"id":"4101","name":"Sales & Service Revenue","nameAr":"إيرادات المبيعات / الخدمات","type":"Revenue","normal":"Credit","bal":0,"isMain":true,"pid":"41"},{"id":"4101-01","name":"Local Sales","nameAr":"مبيعات بضاعة - محلية","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4101"},{"id":"4101-02","name":"Export Sales","nameAr":"مبيعات بضاعة - تصدير","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4101"},{"id":"4101-03","name":"Service Revenue","nameAr":"إيرادات الخدمات","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4101"},{"id":"4102","name":"Sales Returns & Allowances","nameAr":"مردودات ومسموحات المبيعات","type":"Revenue","normal":"Debit","bal":0,"isMain":true,"pid":"41"},{"id":"4102-01","name":"Sales Returns","nameAr":"مردودات المبيعات","type":"Revenue","normal":"Debit","bal":0,"isMain":false,"pid":"4102"},{"id":"4102-02","name":"Sales Discounts","nameAr":"خصومات المبيعات","type":"Revenue","normal":"Debit","bal":0,"isMain":false,"pid":"4102"},{"id":"42","name":"Other Revenues","nameAr":"الإيرادات الأخرى","type":"Revenue","normal":"Credit","bal":0,"isMain":true},{"id":"4201","name":"Other Income","nameAr":"إيرادات أخرى","type":"Revenue","normal":"Credit","bal":0,"isMain":true,"pid":"42"},{"id":"4201-01","name":"Bank Interest Income","nameAr":"إيرادات الفوائد البنكية","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4201"},{"id":"4201-02","name":"Gain on Sale of Fixed Assets","nameAr":"أرباح بيع الأصول الثابتة","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4201"},{"id":"4201-03","name":"Investment Income","nameAr":"إيرادات الاستثمارات","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4201"},{"id":"4201-04","name":"Miscellaneous Income","nameAr":"إيرادات متنوعة أخرى","type":"Revenue","normal":"Credit","bal":0,"isMain":false,"pid":"4201"},{"id":"51","name":"Cost of Goods Sold (COGS)","nameAr":"تكلفة البضاعة المباعة","type":"Expense","normal":"Debit","bal":0,"isMain":true},{"id":"5101","name":"Direct Cost of Sales","nameAr":"تكلفة المبيعات المباشرة","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"51"},{"id":"5101-01","name":"Cost of Goods Sold","nameAr":"تكلفة البضاعة المباعة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"5101"},{"id":"5101-02","name":"Purchases","nameAr":"مشتريات البضاعة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"5101"},{"id":"5101-03","name":"Purchase Returns","nameAr":"مردودات المشتريات","type":"Expense","normal":"Credit","bal":0,"isMain":false,"pid":"5101"},{"id":"5101-04","name":"Freight-In / Import Costs","nameAr":"تكاليف الشحن والنقل (وارد)","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"5101"},{"id":"5101-05","name":"Direct Labor","nameAr":"عمالة مباشرة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"5101"},{"id":"61","name":"Selling & Distribution Expenses","nameAr":"مصروفات البيع والتوزيع","type":"Expense","normal":"Debit","bal":0,"isMain":true},{"id":"6101","name":"Sales Expenses","nameAr":"مصروفات المبيعات","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"61"},{"id":"6101-01","name":"Sales Team Salaries","nameAr":"رواتب فريق المبيعات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6101"},{"id":"6101-02","name":"Sales Commissions","nameAr":"عمولات المبيعات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6101"},{"id":"6101-03","name":"Advertising & Marketing","nameAr":"مصروفات الإعلان والتسويق","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6101"},{"id":"6101-04","name":"Freight-Out / Delivery Costs","nameAr":"مصروفات الشحن والتوصيل (صادر)","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6101"},{"id":"6101-05","name":"Packaging Expenses","nameAr":"مصروفات التغليف","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6101"},{"id":"62","name":"General & Administrative Expenses (G&A)","nameAr":"المصروفات الإدارية والعمومية","type":"Expense","normal":"Debit","bal":0,"isMain":true},{"id":"6201","name":"Administrative Salaries & Wages","nameAr":"الرواتب والأجور الإدارية","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"62"},{"id":"6201-01","name":"Administrative Staff Salaries","nameAr":"رواتب الموظفين الإداريين","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6201"},{"id":"6201-02","name":"Housing & Living Allowances","nameAr":"بدل السكن والمعيشة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6201"},{"id":"6201-03","name":"End-of-Service Benefits (Expense)","nameAr":"مكافأة نهاية الخدمة (مصروف)","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6201"},{"id":"6201-04","name":"Social Security & Medical Insurance","nameAr":"تأمينات اجتماعية وتأمين طبي","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6201"},{"id":"6202","name":"Rent & Utilities","nameAr":"مصروفات الإيجار والمرافق","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"62"},{"id":"6202-01","name":"Office & Warehouse Rent","nameAr":"إيجار المكاتب والمستودعات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6202"},{"id":"6202-02","name":"Electricity & Water","nameAr":"كهرباء وماء","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6202"},{"id":"6202-03","name":"Telephone & Internet","nameAr":"اتصالات وإنترنت","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6202"},{"id":"6203","name":"Depreciation & Amortization","nameAr":"مصروفات الإهلاك والإطفاء","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"62"},{"id":"6203-01","name":"Depreciation of Fixed Assets","nameAr":"إهلاك الأصول الثابتة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6203"},{"id":"6203-02","name":"Amortization of Intangibles","nameAr":"إطفاء الأصول غير الملموسة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6203"},{"id":"6204","name":"Other G&A Expenses","nameAr":"مصروفات إدارية أخرى","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"62"},{"id":"6204-01","name":"Stationery & Printing","nameAr":"مصروفات القرطاسية والمطبوعات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"6204-02","name":"Travel & Transportation","nameAr":"مصروفات السفر والانتقالات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"6204-03","name":"Legal & Consulting Fees","nameAr":"رسوم قانونية واستشارات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"6204-04","name":"Audit Fees","nameAr":"رسوم مراجعة حسابات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"6204-05","name":"Miscellaneous Insurance","nameAr":"تأمينات متنوعة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"6204-06","name":"Maintenance & Repairs","nameAr":"مصروفات صيانة وإصلاح","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"6204-07","name":"Bank Charges & Service Fees","nameAr":"مصروفات بنكية ورسوم خدمات","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6204"},{"id":"63","name":"Financial Expenses","nameAr":"المصروفات المالية","type":"Expense","normal":"Debit","bal":0,"isMain":true},{"id":"6301","name":"Interest & Finance Charges","nameAr":"الفوائد والمصروفات التمويلية","type":"Expense","normal":"Debit","bal":0,"isMain":true,"pid":"63"},{"id":"6301-01","name":"Bank Loan Interest","nameAr":"فوائد القروض البنكية","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6301"},{"id":"6301-02","name":"Foreign Exchange Losses","nameAr":"خسائر فروق العملة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6301"},{"id":"6301-03","name":"Asset Impairment Losses","nameAr":"خسائر هبوط قيمة الأصول","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6301"},{"id":"6301-04","name":"Loss on Sale of Fixed Assets","nameAr":"خسائر بيع الأصول الثابتة","type":"Expense","normal":"Debit","bal":0,"isMain":false,"pid":"6301"}];
+
+function importCoA(){
+ if(!confirm('This will REPLACE the current Chart of Accounts with the bilingual IFRS chart (138 accounts). Your journals and transactions will be kept. Continue?')){return;}
+ db.accounts = COA_IMPORT.map(function(a){
+  return {
+   id: a.id,
+   name: a.name,
+   nameAr: a.nameAr,
+   type: a.type,
+   normal: a.normal,
+   bal: 0,
+   isMain: a.isMain,
+   pid: a.pid || undefined
+  };
+ });
+ // Clean up undefined pid
+ db.accounts.forEach(function(a){if(a.pid===undefined)delete a.pid;});
+ save();
+ render();
+ alert('Chart of Accounts imported successfully! 138 accounts added.');
+}
+
 function render(){
  CURRENT_USER=currentUser;
  var el=document.getElementById('app');
@@ -991,7 +1024,12 @@ function buildLayout(){
   {k:'customers',i:'users',l:tr('lbl_customers')+' ('+db.customers.length+')'},
   {k:'suppliers',i:'truck',l:tr('lbl_suppliers')+' ('+db.suppliers.length+')'},
   {sec:tr('sec_settings')},
-   {sec:'Fixed Assets'},
+   {sec:'Inventory'},
+  {k:'items',     i:'list',  l:'Items ('+(db.items||[]).length+')'},
+  {k:'purchases', i:'ainO',  l:'Purchases'},
+  {k:'sales2',    i:'rcpt',  l:'Sales'},
+  {k:'stockrpt',  i:'trend', l:'Stock Report'},
+  {sec:'Fixed Assets'},
   {k:'fixedassets',i:'bank',l:'Assets ('+db.fixedAssets.length+')'},
   {k:'assetlocations',i:'list',l:'Locations'},
   {k:'depreciation',i:'trend',l:'Depreciation Report'},
@@ -1004,7 +1042,7 @@ function buildLayout(){
   if(n.sec)nav+='<div class="ns">'+n.sec+'</div>';
   else nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+n.k+'">'+ic(n.i)+' '+n.l+'</div>';
  });
- var pages={coa:pCOA,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
+ var pages={coa:pCOA,items:pItems,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
  if(view==='fixedassets'&&tFA){return pAssetDetail();}
  var fn=pages[view]||pCOA;
  return '<div class="sb"><div class="logo"><h2>'+(co.name||'AccountPro')+'</h2><p>'+(co.address||'KSA')+'</p></div>'
@@ -1386,13 +1424,512 @@ function mOpeningBalances(){
   +'</div>';
  return wrap('Opening Balances',body,'mSaveOB','Save Opening Balances');
 }
+
+function nextPI(){return 'PI-'+String((db.purchaseInvoices||[]).length+1).padStart(4,'0');}
+function nextSI(){return 'SI-'+String((db.salesInvoices2||[]).length+1).padStart(4,'0');}
+function nextItemId(){return 'IT-'+String((db.items||[]).length+1).padStart(3,'0');}
+function itemById(id){return (db.items||[]).find(function(x){return x.id===id;});}
+function receiveStock(itemId,qty,cost){
+ var it=itemById(itemId);if(!it)return;
+ var oldQty=it.qty||0;
+ var oldVal=oldQty*(it.avgCost||0);
+ var newVal=qty*(cost||0);
+ var newQty=oldQty+qty;
+ it.qty=newQty;
+ it.avgCost=newQty>0?(oldVal+newVal)/newQty:(cost||0);
+}
+function issueStock(itemId,qty){
+ var it=itemById(itemId);if(!it)return 0;
+ var cost=it.avgCost||0;
+ it.qty=Math.max(0,(it.qty||0)-qty);
+ return cost;
+}
+function pItems(){
+ var h=tb('Inventory Items','<button class="btn bp" data-action="addItem">'+ic('plus')+' New Item</button><button class="btn" data-action="xlsStock">'+ic('dn')+' Excel</button>');
+ h+='<div class="pg">';
+ // Recalculate all items from invoices
+ (db.items||[]).forEach(function(it){
+  var bq=0,ac=0;
+  (db.purchaseInvoices||[]).forEach(function(pi){
+   if(!pi.posted)return;
+   pi.lines.forEach(function(l){
+    if(l.itemId!==it.id)return;
+    if(pi.type==='return'){bq=Math.max(0,bq-l.qty);}
+    else{var ov=bq*ac;var nv=l.qty*(l.cost||0);bq+=l.qty;ac=bq>0?(ov+nv)/bq:l.cost||0;}
+   });
+  });
+  (db.salesInvoices2||[]).forEach(function(si){
+   if(!si.posted)return;
+   si.lines.forEach(function(l){
+    if(l.itemId!==it.id)return;
+    if(si.type==='return')bq+=l.qty;else bq=Math.max(0,bq-l.qty);
+   });
+  });
+  it.qty=bq;it.avgCost=ac;
+ });
+ var totalVal=(db.items||[]).reduce(function(s,it){return s+(it.qty||0)*(it.avgCost||0);},0);
+ h+='<div class="mets">'
+  +'<div class="met"><div class="mlab">Total Items</div><div class="mv">'+(db.items||[]).length+'</div></div>'
+  +'<div class="met"><div class="mlab">Total Qty</div><div class="mv">'+((db.items||[]).reduce(function(s,it){return s+(it.qty||0);},0)).toFixed(2)+'</div></div>'
+  +'<div class="met"><div class="mlab">Inventory Value</div><div class="mv pos">'+N(totalVal)+'</div></div>'
+  +'<div class="met"><div class="mlab">Low Stock</div><div class="mv neg">'+((db.items||[]).filter(function(it){return it.reorderQty&&(it.qty||0)<=(it.reorderQty||0);})).length+'</div></div>'
+  +'</div>';
+ if(!(db.items||[]).length){h+='<div class="es">No items yet.</div>';}
+ else{
+  h+='<div class="card"><div class="tw"><table><thead><tr><th>Code</th><th>Item Name</th><th>Unit</th><th class="tr">Qty</th><th class="tr">Avg Cost</th><th class="tr">Value</th><th class="tr">Sale Price</th><th>Reorder</th><th style="width:80px"></th></tr></thead><tbody>';
+  (db.items||[]).forEach(function(it){
+   var val=(it.qty||0)*(it.avgCost||0);
+   var low=it.reorderQty&&(it.qty||0)<=it.reorderQty;
+   h+='<tr><td><span class="tag">'+it.id+'</span></td><td style="font-weight:500">'+it.name+'</td><td style="font-size:12px;color:var(--t2)">'+( it.unit||'pcs')+'</td><td class="tr mn" style="'+(low?'color:var(--rd);font-weight:700':'')+'">'+(it.qty||0).toFixed(2)+'</td><td class="tr mn">'+N(it.avgCost||0)+'</td><td class="tr mn">'+N(val)+'</td><td class="tr mn" style="color:var(--gn)">'+N(it.salePrice||0)+'</td><td style="text-align:center;font-size:12px">'+( it.reorderQty||'—')+'</td><td><div style="display:flex;gap:3px"><button class="btn bsm bg0" data-edititem="'+it.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-delitem="'+it.id+'">'+ic('del')+'</button></div></td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+ }
+ return h+'</div>';
+}
+function pPurchases(){
+ var pis=db.purchaseInvoices||[];
+ var h=tb('Purchase Invoices','<button class="btn bp" data-action="addPI">'+ic('plus')+' New Purchase</button><button class="btn bdr" data-action="addPR">'+ic('plus')+' Purchase Return</button><button class="btn" data-action="xlsPI">'+ic('dn')+' Excel</button>');
+ h+='<div class="pg">';
+ var totP=pis.filter(function(p){return p.type!=='return';}).reduce(function(s,p){return s+p.total;},0);
+ var totR=pis.filter(function(p){return p.type==='return';}).reduce(function(s,p){return s+p.total;},0);
+ h+='<div class="mets"><div class="met"><div class="mlab">Invoices</div><div class="mv">'+pis.filter(function(p){return p.type!=='return';}).length+'</div></div><div class="met"><div class="mlab">Total Purchases</div><div class="mv">'+N(totP)+'</div></div><div class="met"><div class="mlab">Returns</div><div class="mv neg">'+N(totR)+'</div></div><div class="met"><div class="mlab">Net</div><div class="mv pos">'+N(totP-totR)+'</div></div></div>';
+ if(!pis.length){h+='<div class="es">No purchase invoices yet.</div>';}
+ else{
+  h+='<div class="card"><div class="tw"><table><thead><tr><th>Ref</th><th>Date</th><th>Supplier</th><th>Type</th><th class="tr">Subtotal</th><th class="tr">VAT</th><th class="tr">Total</th><th>Status</th><th style="width:90px"></th></tr></thead><tbody>';
+  pis.slice().reverse().forEach(function(p){
+   var isR=p.type==='return';
+   h+='<tr><td><span class="tag">'+p.id+'</span></td><td>'+p.date+'</td><td style="font-weight:500">'+( p.supplierName||'—')+'</td><td><span class="b '+(isR?'brd':'bgn')+'">'+(isR?'Return':'Purchase')+'</span></td><td class="tr mn">'+N(p.subtotal||0)+'</td><td class="tr mn" style="color:var(--t2)">'+N(p.vat||0)+'</td><td class="tr mn" style="font-weight:700">'+N(p.total||0)+'</td><td><span class="b '+(p.posted?'bgn':'bam')+'">'+(p.posted?'Posted':'Draft')+'</span></td><td><div style="display:flex;gap:3px"><button class="btn bsm bg0" data-printpi="'+p.id+'">'+ic('prt')+'</button><button class="btn bsm bg0" data-viewpi="'+p.id+'">'+ic('eye')+'</button>'+(!p.posted?'<button class="btn bsm bp" data-postpi="'+p.id+'">Post</button>':'')+' <button class="btn bsm bg0 bdr" data-delpi="'+p.id+'">'+ic('del')+'</button></div></td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+ }
+ return h+'</div>';
+}
+function pSales2(){
+ var sis=db.salesInvoices2||[];
+ var h=tb('Sales Invoices','<button class="btn bp" data-action="addSI">'+ic('plus')+' New Sale</button><button class="btn bdr" data-action="addSR">'+ic('plus')+' Sales Return</button><button class="btn" data-action="xlsSI">'+ic('dn')+' Excel</button>');
+ h+='<div class="pg">';
+ var totS=sis.filter(function(s){return s.type!=='return';}).reduce(function(s,x){return s+x.total;},0);
+ var totR=sis.filter(function(s){return s.type==='return';}).reduce(function(s,x){return s+x.total;},0);
+ h+='<div class="mets"><div class="met"><div class="mlab">Invoices</div><div class="mv">'+sis.filter(function(s){return s.type!=='return';}).length+'</div></div><div class="met"><div class="mlab">Total Sales</div><div class="mv pos">'+N(totS)+'</div></div><div class="met"><div class="mlab">Returns</div><div class="mv neg">'+N(totR)+'</div></div><div class="met"><div class="mlab">Net Sales</div><div class="mv">'+N(totS-totR)+'</div></div></div>';
+ if(!sis.length){h+='<div class="es">No sales invoices yet.</div>';}
+ else{
+  h+='<div class="card"><div class="tw"><table><thead><tr><th>Ref</th><th>Date</th><th>Customer</th><th>Type</th><th class="tr">Subtotal</th><th class="tr">VAT</th><th class="tr">Total</th><th>Status</th><th style="width:90px"></th></tr></thead><tbody>';
+  sis.slice().reverse().forEach(function(s){
+   var isR=s.type==='return';
+   h+='<tr><td><span class="tag">'+s.id+'</span></td><td>'+s.date+'</td><td style="font-weight:500">'+( s.customerName||'—')+'</td><td><span class="b '+(isR?'brd':'bgn')+'">'+(isR?'Return':'Sale')+'</span></td><td class="tr mn">'+N(s.subtotal||0)+'</td><td class="tr mn" style="color:var(--t2)">'+N(s.vat||0)+'</td><td class="tr mn" style="font-weight:700">'+N(s.total||0)+'</td><td><span class="b '+(s.posted?'bgn':'bam')+'">'+(s.posted?'Posted':'Draft')+'</span></td><td><div style="display:flex;gap:3px"><button class="btn bsm bg0" data-printsi="'+s.id+'">'+ic('prt')+'</button><button class="btn bsm bg0" data-viewsi="'+s.id+'">'+ic('eye')+'</button>'+(!s.posted?'<button class="btn bsm bp" data-postsi="'+s.id+'">Post</button>':'')+' <button class="btn bsm bg0 bdr" data-delsi="'+s.id+'">'+ic('del')+'</button></div></td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+ }
+ return h+'</div>';
+}
+function pStockRpt(){
+ var f=stockFrom,t=stockTo;
+ var h=tb('Stock Report',
+  '<button class="btn" data-action="xlsStockRpt">'+ic('dn')+' Excel</button>'
+  +'<button class="btn" data-action="pdfStockRpt">'+ic('prt')+' PDF</button>');
+ h+='<div class="pg">';
+ // Filter bar
+ h+='<div class="card" style="max-width:820px;margin-bottom:14px">'
+  +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'
+  +'<div class="fl"><label>From</label><input type="date" id="stockFrom" value="'+f+'" style="padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></div>'
+  +'<div class="fl"><label>To</label><input type="date" id="stockTo" value="'+t+'" style="padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></div>'
+  +'<button class="btn bp" id="btnApplyStock">Apply</button>'
+  +'<button class="btn" id="btnClearStock">Clear</button>'
+  +'</div>'
+  +((f||t)?'<div style="margin-top:8px;font-size:11px;color:var(--t2)">Period: '+(f||'All')+'  to  '+(t||'All')+'</div>':'')
+  +'</div>';
+ h+='<div class="card"><div class="tw"><table><thead><tr>'
+  +'<th>Code</th><th>Item</th><th>Unit</th>'
+  +'<th class="tr">Qty In</th><th class="tr">Qty Out</th><th class="tr">Balance</th>'
+  +'<th class="tr">Avg Cost</th><th class="tr">Value</th>'
+  +'</tr></thead><tbody>';
+ var tIn=0,tOut=0,tVal=0;
+ (db.items||[]).forEach(function(it){
+  // Period movements (filtered by date)
+  var qIn=0,qOut=0;
+  (db.purchaseInvoices||[]).forEach(function(pi){
+   if(!pi.posted)return;
+   if(f&&pi.date<f)return;
+   if(t&&pi.date>t)return;
+   pi.lines.forEach(function(l){
+    if(l.itemId!==it.id)return;
+    if(pi.type==='return')qOut+=l.qty;else qIn+=l.qty;
+   });
+  });
+  (db.salesInvoices2||[]).forEach(function(si){
+   if(!si.posted)return;
+   if(f&&si.date<f)return;
+   if(t&&si.date>t)return;
+   si.lines.forEach(function(l){
+    if(l.itemId!==it.id)return;
+    if(si.type==='return')qIn+=l.qty;else qOut+=l.qty;
+   });
+  });
+  // Balance = recalculate from ALL posted invoices (WAVG)
+  var balQty=0,avgC=0;
+  (db.purchaseInvoices||[]).forEach(function(pi){
+   if(!pi.posted)return;
+   pi.lines.forEach(function(l){
+    if(l.itemId!==it.id)return;
+    if(pi.type==='return'){balQty=Math.max(0,balQty-l.qty);}
+    else{
+     var oldVal=balQty*avgC;
+     var newVal=l.qty*(l.cost||0);
+     balQty+=l.qty;
+     avgC=balQty>0?(oldVal+newVal)/balQty:l.cost||0;
+    }
+   });
+  });
+  (db.salesInvoices2||[]).forEach(function(si){
+   if(!si.posted)return;
+   si.lines.forEach(function(l){
+    if(l.itemId!==it.id)return;
+    if(si.type==='return')balQty+=l.qty;
+    else balQty=Math.max(0,balQty-l.qty);
+   });
+  });
+  // Sync live item data
+  it.qty=balQty;
+  it.avgCost=avgC;
+  var val=balQty*avgC;
+  tIn+=qIn;tOut+=qOut;tVal+=val;
+  var low=it.reorderQty&&balQty<=it.reorderQty;
+  var hasMove=qIn>0||qOut>0;
+  if(!hasMove&&(f||t))return;
+  h+='<tr>'
+   +'<td><span class="tag">'+it.id+'</span></td>'
+   +'<td style="font-weight:500">'+it.name+'</td>'
+   +'<td style="font-size:12px;color:var(--t2)">'+( it.unit||'pcs')+'</td>'
+   +'<td class="tr mn" style="color:var(--gn)">'+qIn.toFixed(2)+'</td>'
+   +'<td class="tr mn" style="color:var(--rd)">'+qOut.toFixed(2)+'</td>'
+   +'<td class="tr mn" style="font-weight:700;color:'+(low?'var(--rd)':'var(--gn)')+'">'+balQty.toFixed(2)+'</td>'
+   +'<td class="tr mn">'+N(avgC)+'</td>'
+   +'<td class="tr mn" style="font-weight:700">'+N(val)+'</td>'
+   +'</tr>';
+ });
+ h+='<tr class="fin"><td colspan="3">Total</td>'
+  +'<td class="tr mn">'+tIn.toFixed(2)+'</td>'
+  +'<td class="tr mn">'+tOut.toFixed(2)+'</td>'
+  +'<td></td><td></td>'
+  +'<td class="tr mn">'+N(tVal)+'</td></tr>';
+ h+='</tbody></table></div></div></div>';
+ return h;
+}
+
+
+// ── Inventory Modals ─────────────────────────────────────────
+var tItem={}, tPI={}, tSI={};
+var stockFrom='', stockTo='';
+
+function mItem(){
+ var it=tItem,isNew=!it.editId;
+ var units=['pcs','kg','ton','ltr','box','carton','set','pair','m','m2','m3'];
+ var body='<div class="fr2">'
+  +fld('Item Code *','<input id="it-id" value="'+(it.id||nextItemId())+'">')
+  +fld('Item Name *','<input id="it-name" value="'+(it.name||'')+'">')
+  +'</div><div class="fr2">'
+  +fld('Arabic Name','<input id="it-namear" value="'+(it.nameAr||'')+'" dir="rtl">')
+  +fld('Unit','<select id="it-unit">'+units.map(function(u){return '<option'+(u===(it.unit||'pcs')?' selected':'')+'>'+u+'</option>';}).join('')+'</select>')
+  +'</div><div class="fr2">'
+  +fld('Sale Price','<input type="number" id="it-sp" value="'+(it.salePrice||0)+'" min="0" step="0.01">')
+  +fld('Reorder Qty','<input type="number" id="it-rq" value="'+(it.reorderQty||0)+'" min="0">')
+  +'</div><div class="fr2">'
+  +fld('Inventory Account','<select id="it-invacc"><option value="">— Select —</option>'+db.accounts.filter(function(a){return !a.isMain;}).map(function(a){return '<option value="'+a.id+'"'+(a.id===it.invAccId?' selected':'')+'>'+a.id+' - '+a.name+'</option>';}).join('')+'</select>')
+  +fld('COGS Account','<select id="it-cogs"><option value="">— Select —</option>'+db.accounts.filter(function(a){return !a.isMain&&a.type==='Expense';}).map(function(a){return '<option value="'+a.id+'"'+(a.id===it.cogsAccId?' selected':'')+'>'+a.id+' - '+a.name+'</option>';}).join('')+'</select>')
+  +'</div>'
+  +fld('Revenue Account','<select id="it-rev"><option value="">— Select —</option>'+db.accounts.filter(function(a){return !a.isMain&&a.type==='Revenue';}).map(function(a){return '<option value="'+a.id+'"'+(a.id===it.revAccId?' selected':'')+'>'+a.id+' - '+a.name+'</option>';}).join('')+'</select>');
+ return wrap((isNew?'New Item':'Edit: '+it.name),body,'mSaveItem','Save Item');
+}
+
+function mPurchaseInvoice(isReturn){
+ var pi=tPI;
+ var title=(isReturn?'Purchase Return':'Purchase Invoice');
+ var sups=db.suppliers||[];
+ var body='<div class="fr2">'
+  +fld('Ref #','<input id="pi-id" value="'+(pi.id||nextPI())+'">')
+  +fld('Date *','<input type="date" id="pi-date" value="'+(pi.date||today())+'">')
+  +'</div><div class="fr2">'
+  +fld('Supplier','<select id="pi-sup"><option value="">— Select —</option>'+sups.map(function(s){return '<option value="'+s.id+'"'+(s.id===pi.supplierId?' selected':'')+'>'+s.name+'</option>';}).join('')+'</select>')
+  +fld('Ref / PO #','<input id="pi-ref" value="'+(pi.ref||'')+'">')
+  +'</div>';
+ // Lines
+ body+='<div class="ct" style="margin:10px 0 6px">Items</div>';
+ body+='<div class="tw" style="overflow-x:auto"><table style="font-size:12px;width:100%"><thead><tr>'
+  +'<th>Item</th><th style="width:80px">Qty</th><th style="width:110px">Unit Cost</th>'
+  +'<th style="width:70px">VAT%</th><th style="width:100px">Subtotal</th><th style="width:30px"></th>'
+  +'</tr></thead><tbody id="piLines">';
+ var lines=pi.lines&&pi.lines.length?pi.lines:[{itemId:'',qty:1,cost:0,vat:15}];
+ lines.forEach(function(l,i){
+  body+='<tr id="pil-'+i+'">'
+   +'<td><select class="piItem" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="">— Select Item —</option>'
+   +db.items.map(function(it){return '<option value="'+it.id+'"'+(it.id===l.itemId?' selected':'')+'>'+it.id+' - '+it.name+'</option>';}).join('')
+   +'</select></td>'
+   +'<td><input type="number" class="piQty" data-i="'+i+'" value="'+(l.qty||1)+'" min="0.01" step="0.01" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input type="number" class="piCost" data-i="'+i+'" value="'+(l.cost||0)+'" min="0" step="0.01" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><select class="piVat" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="0"'+(l.vat===0?' selected':'')+'>0%</option><option value="5"'+(l.vat===5?' selected':'')+'>5%</option><option value="15"'+(l.vat===15||l.vat===undefined?' selected':'')+'>15%</option></select></td>'
+   +'<td class="tr mn piLineTotal" data-i="'+i+'" style="padding:5px">'+N((l.qty||0)*(l.cost||0))+'</td>'
+   +'<td><button class="btn bsm bdr" data-rmpiline="'+i+'">✕</button></td>'
+   +'</tr>';
+ });
+ body+='</tbody></table></div>';
+ body+='<button class="btn" id="piAddLine" style="margin-top:8px">+ Add Line</button>';
+ body+='<div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:var(--r);text-align:right">'
+  +'<span style="font-size:12px;color:var(--t2)">Subtotal: </span><span id="piSubtotal" class="mn">0.00</span>'
+  +'&nbsp;&nbsp;<span style="font-size:12px;color:var(--t2)">VAT: </span><span id="piVat" class="mn">0.00</span>'
+  +'&nbsp;&nbsp;<strong>Total: </strong><span id="piTotal" class="mn" style="font-size:16px">0.00</span></div>';
+ body+=fld('Notes','<input id="pi-notes" value="'+(pi.notes||'')+'">');
+ return wrap(title,body,'mSavePI','Save Invoice');
+}
+
+function mSalesInvoice(isReturn){
+ var si=tSI;
+ var title=(isReturn?'Sales Return':'Sales Invoice');
+ var custs=db.customers||[];
+ var body='<div class="fr2">'
+  +fld('Ref #','<input id="si-id" value="'+(si.id||nextSI())+'">')
+  +fld('Date *','<input type="date" id="si-date" value="'+(si.date||today())+'">')
+  +'</div><div class="fr2">'
+  +fld('Customer','<select id="si-cus"><option value="">— Select —</option>'+custs.map(function(c){return '<option value="'+c.id+'"'+(c.id===si.customerId?' selected':'')+'>'+c.name+'</option>';}).join('')+'</select>')
+  +fld('Ref #','<input id="si-ref" value="'+(si.ref||'')+'">')
+  +'</div>';
+ body+='<div class="ct" style="margin:10px 0 6px">Items</div>';
+ body+='<div class="tw" style="overflow-x:auto"><table style="font-size:12px;width:100%"><thead><tr>'
+  +'<th>Item</th><th style="width:80px">Qty</th><th style="width:110px">Unit Price</th>'
+  +'<th style="width:70px">VAT%</th><th style="width:100px">Subtotal</th><th style="width:30px"></th>'
+  +'</tr></thead><tbody id="siLines">';
+ var lines=si.lines&&si.lines.length?si.lines:[{itemId:'',qty:1,price:0,vat:15}];
+ lines.forEach(function(l,i){
+  body+='<tr id="sil-'+i+'">'
+   +'<td><select class="siItem" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="">— Select Item —</option>'
+   +db.items.map(function(it){return '<option value="'+it.id+'"'+(it.id===l.itemId?' selected':'')+'>'+it.id+' - '+it.name+(it.salePrice?' ('+N(it.salePrice)+')':'')+' [Qty:'+( it.qty||0).toFixed(0)+']</option>';}).join('')
+   +'</select></td>'
+   +'<td><input type="number" class="siQty" data-i="'+i+'" value="'+(l.qty||1)+'" min="0.01" step="0.01" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input type="number" class="siPrice" data-i="'+i+'" value="'+(l.price||0)+'" min="0" step="0.01" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><select class="siVat" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="0"'+(l.vat===0?' selected':'')+'>0%</option><option value="5"'+(l.vat===5?' selected':'')+'>5%</option><option value="15"'+(l.vat===15||l.vat===undefined?' selected':'')+'>15%</option></select></td>'
+   +'<td class="tr mn siLineTotal" data-i="'+i+'" style="padding:5px">'+N((l.qty||0)*(l.price||0))+'</td>'
+   +'<td><button class="btn bsm bdr" data-rmsiline="'+i+'">✕</button></td>'
+   +'</tr>';
+ });
+ body+='</tbody></table></div>';
+ body+='<button class="btn" id="siAddLine" style="margin-top:8px">+ Add Line</button>';
+ body+='<div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:var(--r);text-align:right">'
+  +'<span style="font-size:12px;color:var(--t2)">Subtotal: </span><span id="siSubtotal" class="mn">0.00</span>'
+  +'&nbsp;&nbsp;<span style="font-size:12px;color:var(--t2)">VAT: </span><span id="siVat" class="mn">0.00</span>'
+  +'&nbsp;&nbsp;<strong>Total: </strong><span id="siTotal" class="mn" style="font-size:16px">0.00</span></div>';
+ body+=fld('Notes','<input id="si-notes" value="'+(si.notes||'')+'">');
+ return wrap(title,body,'mSaveSI','Save Invoice');
+}
+
+
+// ── ZATCA Invoice Print ──────────────────────────────────────
+function buildZATCATLV(sellerName,vatNo,dateTime,totalWithVat,vatAmount){
+ function tlv(tag,val){
+  var enc=unescape(encodeURIComponent(val));
+  var b='';b+=String.fromCharCode(tag);b+=String.fromCharCode(enc.length);b+=enc;
+  return b;
+ }
+ var raw=tlv(1,sellerName)+tlv(2,vatNo)+tlv(3,dateTime)+tlv(4,String(totalWithVat.toFixed(2)))+tlv(5,String(vatAmount.toFixed(2)));
+ return btoa(unescape(encodeURIComponent(raw)));
+}
+
+// ── Global ZATCA QR Helper ───────────────────────────────────
+function makeZATCAQR(sellerName,vatNo,dateStr,total,vat){
+ // Build TLV Base64 string (ZATCA standard)
+ function tlv(tag,val){
+  var enc=unescape(encodeURIComponent(String(val)));
+  return String.fromCharCode(tag)+String.fromCharCode(enc.length)+enc;
+ }
+ var raw=tlv(1,sellerName)+tlv(2,vatNo)+tlv(3,dateStr+'T00:00:00Z')+tlv(4,(+total).toFixed(2))+tlv(5,(+vat).toFixed(2));
+ var b64=btoa(unescape(encodeURIComponent(raw)));
+ // Generate QR image URL using QRJS
+ try{return QRJS.encode(b64,3);}catch(e){return '';}
+}
+
+function printSalesInvoice(siId){
+ var si=(db.salesInvoices2||[]).find(function(x){return x.id===siId;});
+ if(!si)return;
+ var co=db.company;
+ var cusName=si.customerName||'';
+ var qrImg=makeZATCAQR(co.name||'',co.vatNo||'',si.date,si.total||0,si.vat||0);
+ var linesHtml='';
+ (si.lines||[]).forEach(function(l,i){
+  var it=itemById(l.itemId)||{name:l.itemId,unit:'pcs'};
+  var sub=l.qty*l.price;
+  var vatAmt=sub*l.vat/100;
+  linesHtml+='<tr>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee">'+(i+1)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:500">'+it.name+(it.nameAr?'<br><span style="font-size:10pt;color:#666;direction:rtl">'+it.nameAr+'</span>':'')+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:center">'+it.unit+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+l.qty.toFixed(2)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+N(l.price)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+l.vat+'%</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+N(vatAmt)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600">'+N(sub+vatAmt)+'</td>'
+   +'</tr>';
+ });
+ var isReturn=si.type==='return';
+ var css='@page{margin:10mm 12mm}body{font-family:Arial,sans-serif;font-size:10pt;color:#222;direction:ltr}'
+  +'.inv{max-width:210mm;margin:0 auto}'
+  +'.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a1a1a;padding-bottom:14px;margin-bottom:16px}'
+  +'.badge{background:'+(isReturn?'#dc2626':'#1a1a1a')+';color:#fff;padding:4px 12px;border-radius:4px;font-size:9pt;font-weight:700}'
+  +'.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}'
+  +'.box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:4px;padding:10px}'
+  +'.box h4{font-size:9pt;color:#666;margin:0 0 6px;text-transform:uppercase;letter-spacing:.05em}'
+  +'.box p{margin:2px 0;font-size:10pt}'
+  +'table{width:100%;border-collapse:collapse;margin-bottom:14px}'
+  +'thead tr{background:#1a1a1a;color:#fff}'
+  +'thead th{padding:7px 10px;text-align:left;font-size:9pt;font-weight:600}'
+  +'.totals{display:flex;justify-content:flex-end}'
+  +'.totals-box{width:260px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden}'
+  +'.trow{display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid #eee;font-size:10pt}'
+  +'.trow.final{background:#1a1a1a;color:#fff;font-weight:700;font-size:12pt;border-bottom:none}'
+  +'.footer{margin-top:30px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #eee;padding-top:14px}'
+  +'.sig-line{width:160px;border-top:1px solid #aaa;text-align:center;padding-top:5px;font-size:9pt;color:#888}'
+  +'.no-print{background:#f0f0f0;padding:10px;margin-bottom:15px;display:flex;gap:10px}'
+  +'@media print{.no-print{display:none}}';
+
+ var body='<div class="no-print">'
+  +'<button onclick="window.print()" style="padding:8px 18px;background:#1a1a1a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px">🖨 Print / Save PDF</button>'
+  +'<button onclick="window.close()" style="padding:8px 14px;background:#eee;border:1px solid #ccc;border-radius:4px;cursor:pointer">Close</button>'
+  +'</div>'
+  +'<div class="inv">'
+  // Header
+  +'<div class="hdr">'
+  +'<div>'
+  +(co.logo?'<img src="'+co.logo+'" style="height:55px;object-fit:contain;margin-bottom:8px;display:block">':'')
+  +'<h2 style="margin:0;font-size:16pt">'+co.name+'</h2>'
+  +'<p style="margin:2px 0;color:#555;font-size:9pt">'+( co.address||'')+'</p>'
+  +'<p style="margin:2px 0;color:#555;font-size:9pt">VAT: '+co.vatNo+' | CR: '+co.cr+'</p>'
+  +'</div>'
+  +'<div style="text-align:right">'
+  +'<div style="margin-bottom:6px"><div class="badge">'+(isReturn?'CREDIT NOTE / إشعار دائن':'TAX INVOICE / فاتورة ضريبية')+'</div></div>'
+  +'<p style="margin:8px 0 2px;font-size:13pt;font-weight:700">'+si.id+'</p>'
+  +'<p style="margin:2px 0;color:#555;font-size:9pt">Date: '+si.date+'</p>'
+  +(qrImg?'<div style="margin-top:12px;display:flex;flex-direction:column;align-items:center">'+'<img src="'+qrImg+'" style="width:120px;height:120px;border:1px solid #eee;padding:4px;background:#fff">'+'<div style="font-size:7pt;color:#666;margin-top:4px;text-align:center;line-height:1.4">ZATCA Compliant<br>\u0641\u0627\u062a\u0648\u0631\u0629 \u0636\u0631\u064a\u0628\u064a\u0629</div></div>':'')
+  +'</div></div>'
+  // Bill To
+  +'<div class="grid2">'
+  +'<div class="box"><h4>Bill To</h4>'
+  +'<p style="font-weight:600">'+cusName+'</p>'
+  +'</div>'
+  +'<div class="box"><h4>Invoice Details</h4>'
+  +'<p>Invoice #: <strong>'+si.id+'</strong></p>'
+  +'<p>Date: '+si.date+'</p>'
+  +'<p>Currency: '+(co.currency||'SAR')+'</p>'
+  +'</div></div>'
+  // Items table
+  +'<table><thead><tr>'
+  +'<th>#</th><th>Item</th><th style="text-align:center">Unit</th>'
+  +'<th style="text-align:right">Qty</th><th style="text-align:right">Price</th>'
+  +'<th style="text-align:right">VAT%</th><th style="text-align:right">VAT Amt</th>'
+  +'<th style="text-align:right">Total</th>'
+  +'</tr></thead><tbody>'+linesHtml+'</tbody></table>'
+  // Totals
+  +'<div class="totals"><div class="totals-box">'
+  +'<div class="trow"><span>Subtotal</span><span>'+N(si.subtotal||0)+'</span></div>'
+  +'<div class="trow"><span>VAT ('+( si.lines&&si.lines[0]?si.lines[0].vat:15)+'%)</span><span>'+N(si.vat||0)+'</span></div>'
+  +'<div class="trow final"><span>TOTAL '+(co.currency||'SAR')+'</span><span>'+N(si.total||0)+'</span></div>'
+  +'</div></div>'
+  // Footer
+  +'<div class="footer">'
+  +'<div style="font-size:9pt;color:#888;max-width:300px">'
+  +'<p style="margin:0">This is a computer-generated tax invoice.</p>'+'<p style="margin:3px 0;font-size:8pt;color:#999">ZATCA compliant e-invoice | فاتورة ضريبية إلكترونية متوافقة مع هيئة الزكاة</p>'
+  +(si.notes?'<p style="margin:4px 0">Notes: '+si.notes+'</p>':'')
+  +'</div>'
+  +'<div style="display:flex;gap:30px">'
+  +'<div class="sig-line">Prepared By</div>'
+  +'<div class="sig-line">Authorized By</div>'
+  +'</div></div>'
+  +'</div>';
+
+ var w=window.open('','_blank','width=850,height=750');
+ if(w){w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+si.id+'</title><style>'+css+'</style></head><body>'+body+'</body></html>');w.document.close();}
+}
+
+function printPurchaseInvoice(piId){
+ var pi=(db.purchaseInvoices||[]).find(function(x){return x.id===piId;});
+ if(!pi)return;
+ var co=db.company;
+ var supName=pi.supplierName||'';
+ var isReturn=pi.type==='return';
+ var linesHtml='';
+ (pi.lines||[]).forEach(function(l,i){
+  var it=itemById(l.itemId)||{name:l.itemId,unit:'pcs'};
+  var sub=l.qty*l.cost;
+  var vatAmt=sub*l.vat/100;
+  linesHtml+='<tr>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee">'+(i+1)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:500">'+it.name+(it.nameAr?'<br><span style="font-size:10pt;color:#666;direction:rtl">'+it.nameAr+'</span>':'')+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:center">'+it.unit+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+l.qty.toFixed(2)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+N(l.cost)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+l.vat+'%</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right">'+N(vatAmt)+'</td>'
+   +'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600">'+N(sub+vatAmt)+'</td>'
+   +'</tr>';
+ });
+ var css='@page{margin:10mm 12mm}body{font-family:Arial,sans-serif;font-size:10pt;color:#222}'
+  +'.inv{max-width:210mm;margin:0 auto}'
+  +'.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a3a6e;padding-bottom:14px;margin-bottom:16px}'
+  +'.badge{background:'+(isReturn?'#dc2626':'#1a3a6e')+';color:#fff;padding:4px 12px;border-radius:4px;font-size:9pt;font-weight:700}'
+  +'.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}'
+  +'.box{background:#f8f9fc;border:1px solid #e0e4ee;border-radius:4px;padding:10px}'
+  +'.box h4{font-size:9pt;color:#666;margin:0 0 6px;text-transform:uppercase}'
+  +'table{width:100%;border-collapse:collapse;margin-bottom:14px}'
+  +'thead tr{background:#1a3a6e;color:#fff}'
+  +'thead th{padding:7px 10px;text-align:left;font-size:9pt}'
+  +'.totals{display:flex;justify-content:flex-end}'
+  +'.totals-box{width:260px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden}'
+  +'.trow{display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid #eee;font-size:10pt}'
+  +'.trow.final{background:#1a3a6e;color:#fff;font-weight:700;font-size:12pt;border-bottom:none}'
+  +'.footer{margin-top:30px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #eee;padding-top:14px}'
+  +'.sig-line{width:160px;border-top:1px solid #aaa;text-align:center;padding-top:5px;font-size:9pt;color:#888}'
+  +'.no-print{background:#f0f0f0;padding:10px;margin-bottom:15px;display:flex;gap:10px}'
+  +'@media print{.no-print{display:none}}';
+
+ var body='<div class="no-print">'
+  +'<button onclick="window.print()" style="padding:8px 18px;background:#1a3a6e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px">🖨 Print / Save PDF</button>'
+  +'<button onclick="window.close()" style="padding:8px 14px;background:#eee;border:1px solid #ccc;border-radius:4px;cursor:pointer">Close</button>'
+  +'</div>'
+  +'<div class="inv">'
+  +'<div class="hdr">'
+  +'<div>'
+  +(co.logo?'<img src="'+co.logo+'" style="height:55px;object-fit:contain;margin-bottom:8px;display:block">':'')
+  +'<h2 style="margin:0;font-size:16pt">'+co.name+'</h2>'
+  +'<p style="margin:2px 0;color:#555;font-size:9pt">'+( co.address||'')+'</p>'
+  +'<p style="margin:2px 0;color:#555;font-size:9pt">VAT: '+co.vatNo+' | CR: '+co.cr+'</p>'
+  +'</div>'
+  +'<div style="text-align:right">'
+  +'<div class="badge">'+(isReturn?'DEBIT NOTE':'PURCHASE ORDER')+'</div>'
+  +'<p style="margin:8px 0 2px;font-size:13pt;font-weight:700">'+pi.id+'</p>'
+  +'<p style="margin:2px 0;color:#555;font-size:9pt">Date: '+pi.date+'</p>'
+  +'</div></div>'
+  +'<div class="grid2">'
+  +'<div class="box"><h4>Supplier</h4><p style="font-weight:600">'+supName+'</p></div>'
+  +'<div class="box"><h4>Invoice Details</h4><p>Ref: <strong>'+pi.id+'</strong></p><p>Date: '+pi.date+'</p><p>Currency: '+(co.currency||'SAR')+'</p></div>'
+  +'</div>'
+  +'<table><thead><tr><th>#</th><th>Item</th><th style="text-align:center">Unit</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Cost</th><th style="text-align:right">VAT%</th><th style="text-align:right">VAT Amt</th><th style="text-align:right">Total</th></tr></thead><tbody>'+linesHtml+'</tbody></table>'
+  +'<div class="totals"><div class="totals-box">'
+  +'<div class="trow"><span>Subtotal</span><span>'+N(pi.subtotal||0)+'</span></div>'
+  +'<div class="trow"><span>VAT</span><span>'+N(pi.vat||0)+'</span></div>'
+  +'<div class="trow final"><span>TOTAL '+(co.currency||'SAR')+'</span><span>'+N(pi.total||0)+'</span></div>'
+  +'</div></div>'
+  +'<div class="footer"><div style="font-size:9pt;color:#888">'
+  +(pi.notes?'<p>Notes: '+pi.notes+'</p>':'')
+  +'</div><div style="display:flex;gap:30px"><div class="sig-line">Received By</div><div class="sig-line">Authorized By</div></div></div>'
+  +'</div>';
+
+ var w=window.open('','_blank','width=850,height=750');
+ if(w){w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+pi.id+'</title><style>'+css+'</style></head><body>'+body+'</body></html>');w.document.close();}
+}
+
 function pCOA(){
  var types=['Asset','Liability','Equity','Revenue','Expense'];
  var lm={};
  db.customers.forEach(function(c){if(c.linkedAccId){if(!lm[c.linkedAccId])lm[c.linkedAccId]=[];lm[c.linkedAccId].push({n:c.name,t:'cus',id:c.id});}});
  db.suppliers.forEach(function(s){if(s.linkedAccId){if(!lm[s.linkedAccId])lm[s.linkedAccId]=[];lm[s.linkedAccId].push({n:s.name,t:'sup',id:s.id});}});
  function rl(aid){var ls=lm[aid]||[];if(!ls.length)return '';return '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">'+ls.map(function(x){return '<span class="b '+(x.t==='cus'?'bbl':'bam')+'" style="font-size:10px;cursor:pointer" data-navto="'+x.t+':'+x.id+'">'+ic(x.t==='cus'?'users':'truck')+' '+x.n+'</span>';}).join('')+'</div>';}
- var h=tb(tr('nav_coa'),'<input id="coaSearch" placeholder="Search accounts..." style="padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;width:180px">'+btn_('','btnPrintCOA',ic('prt')+' Print')+btn_('','btnAddMain',ic('plus')+' '+tr('btn_mainacc'))+btn_('bp','btnAddSub',ic('sub')+' '+tr('btn_subacc')));
+ var h=tb(tr('nav_coa'),'<input id="coaSearch" placeholder="Search accounts..." style="padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;width:180px">'+btn_('','btnPrintCOA',ic('prt')+' Print')+btn_('','btnAddMain',ic('plus')+' '+tr('btn_mainacc'))+btn_('bp','btnAddSub',ic('sub')+' '+tr('btn_subacc'))+'<button class="btn bdr" data-action="importCoA">&#128229; Import IFRS (138)</button>');
  h+='<div class="pg"><div class="hint">'+tr('hint_main')+'. '+tr('hint_sub')+'.</div>';
  types.forEach(function(t){
   var mains=db.accounts.filter(function(a){return a.type===t&&a.isMain;});
@@ -1414,7 +1951,7 @@ function pCOA(){
    h+='</tr>';
    if(exp){subs.forEach(function(s){
     h+='<tr><td></td><td><span class="tag" style="color:var(--pu)">'+s.id+'</span></td>';
-    h+='<td style="padding-left:26px"><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="color:var(--t3)">&#x2514;</span>'+s.name+'<button class="btn bsm bg0" data-editacc="'+s.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-delacc="'+s.id+'">'+ic('del')+'</button></div>'+rl(s.id)+'</td>';
+    h+='<td style="padding-left:26px"><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="color:var(--t3)">&#x2514;</span>'+accN(s)+'<button class="btn bsm bg0" data-editacc="'+s.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-delacc="'+s.id+'">'+ic('del')+'</button></div>'+rl(s.id)+'</td>';
     h+='<td><span class="b bpu" style="font-size:10px">Sub</span></td>';
     h+='<td><span class="b '+(s.normal==='Debit'?'bbl':'bgn')+'">'+s.normal+'</span></td>';
     h+='<td class="tr mn">'+N(s.bal)+'</td>';
@@ -1578,6 +2115,40 @@ function mainBalRange(mainId,from2,to2){
  if(!subs.length)return accBalRange(mainId,from2,to2);
  return subs.reduce(function(s,x){return s+accBalRange(x.id,from2,to2);},0);
 }
+
+function updatePITotals(){
+ var sub=0,vat=0;
+ document.querySelectorAll('.piItem').forEach(function(sel){
+  var i=sel.dataset.i;
+  var qty=Number((document.querySelector('.piQty[data-i="'+i+'"]')||{}).value)||0;
+  var cost=Number((document.querySelector('.piCost[data-i="'+i+'"]')||{}).value)||0;
+  var vatP=Number((document.querySelector('.piVat[data-i="'+i+'"]')||{}).value)||0;
+  var line=qty*cost;
+  sub+=line;vat+=line*vatP/100;
+  var td=document.querySelector('.piLineTotal[data-i="'+i+'"]');
+  if(td)td.textContent=N(line);
+ });
+ var sEl=document.getElementById('piSubtotal');if(sEl)sEl.textContent=N(sub);
+ var vEl=document.getElementById('piVat');if(vEl)vEl.textContent=N(vat);
+ var tEl=document.getElementById('piTotal');if(tEl)tEl.textContent=N(sub+vat);
+}
+function updateSITotals(){
+ var sub=0,vat=0;
+ document.querySelectorAll('.siItem').forEach(function(sel){
+  var i=sel.dataset.i;
+  var qty=Number((document.querySelector('.siQty[data-i="'+i+'"]')||{}).value)||0;
+  var price=Number((document.querySelector('.siPrice[data-i="'+i+'"]')||{}).value)||0;
+  var vatP=Number((document.querySelector('.siVat[data-i="'+i+'"]')||{}).value)||0;
+  var line=qty*price;
+  sub+=line;vat+=line*vatP/100;
+  var td=document.querySelector('.siLineTotal[data-i="'+i+'"]');
+  if(td)td.textContent=N(line);
+ });
+ var sEl=document.getElementById('siSubtotal');if(sEl)sEl.textContent=N(sub);
+ var vEl=document.getElementById('siVat');if(vEl)vEl.textContent=N(vat);
+ var tEl=document.getElementById('siTotal');if(tEl)tEl.textContent=N(sub+vat);
+}
+
 function buildFilterBar(){
  var f2=rptFrom||'',t2=rptTo||'',lv2=rptLevel||'all';
  return '<div class="card" style="max-width:820px;margin-bottom:14px">'
@@ -1935,7 +2506,7 @@ function pSuppliers(){
 function pSettings(){
  var co=db.company;
  var curs=['SAR','USD','EUR','GBP','AED','KWD','BHD','OMR','QAR','EGP'];
- var h=tb(tr('sec_settings'),btn_('bp','btnSaveSettings',ic('save')+' Save Settings'));
+ var h=tb(tr('sec_settings'),btn_('bp','btnSaveSettings',ic('save')+' Save Settings')+'<button class="btn bdr" data-action="importCoA" style="margin-right:8px">📥 Import IFRS Chart of Accounts</button>');
  h+='<div class="pg"><div class="card" style="max-width:660px"><div class="ct">Company Information</div><div class="fg">';
  h+='<div class="fr2">'+fld('Company Name *','<input id="s-name" value="'+(co.name||'')+'">')+fld('CR Number','<input id="s-cr" value="'+(co.cr||'')+'">');
  h+=fld('Address','<input id="s-addr" value="'+(co.address||'')+'">');
@@ -1954,7 +2525,7 @@ function pSettings(){
 
 // ═══ MODALS ══════════════════════════════════════════════════
 function buildModal(){
- var fns={acc:mAcc,je:mJE,inv:mInv,cus:mContact,sup:mContact,rcpt:mVoucher,pymt:mVoucher,cc:mCC,user:mUser,chpwd:mChangePwd,fa:mFA,at:mAddTransaction,loc:mLocation,ob:mOpeningBalances};
+ var fns={acc:mAcc,item:mItem,pi:function(){return mPurchaseInvoice(tPI.isReturn);},si:function(){return mSalesInvoice(tSI.isReturn);},je:mJE,inv:mInv,cus:mContact,sup:mContact,rcpt:mVoucher,pymt:mVoucher,cc:mCC,user:mUser,chpwd:mChangePwd,fa:mFA,at:mAddTransaction,loc:mLocation,ob:mOpeningBalances};
  var fn=fns[modal];return fn?fn():'';
 }
 function wrap(title,body,saveId,saveLabel){
@@ -1964,8 +2535,8 @@ function mAcc(){
  var a=tAcc,isSub=!!a.parentId;
  var mains=db.accounts.filter(function(x){return x.isMain;});
  var body='';
- if(!a.isMain)body+=fld('Parent Account *','<select id="a-par"><option value="">Select...</option>'+mains.map(function(m){return '<option value="'+m.id+'"'+(a.parentId===m.id?' selected':'')+'>'+m.id+' - '+m.name+'</option>';}).join('')+'</select>');
- body+='<div class="fr2">'+fld('Code *','<input id="a-id" value="'+(a.id||'')+'" placeholder="'+(isSub?'1001':'1000')+'">')+fld('Name *','<input id="a-name" value="'+(a.name||'')+'">')+'</div>';
+ if(!a.isMain)body+=fld('Parent Account *','<select id="a-par"><option value="">Select...</option>'+mains.map(function(m){return '<option value="'+m.id+'"'+(a.parentId===m.id?' selected':'')+'>'+m.id+' - '+accN(m)+'</option>';}).join('')+'</select>');
+ body+='<div class="fr2">'+fld('Code *','<input id="a-id" value="'+(a.id||'')+'" placeholder="'+(isSub?'1001':'1000')+'">')+fld('Name (EN) *','<input id="a-name" value="'+(a.name||'')+'" placeholder="e.g. Cash on Hand">')+fld('Name (AR)','<input id="a-namear" value="'+(a.nameAr||'')+'" dir="rtl" placeholder="\u0645\u062b\u0627\u0644: \u0627\u0644\u0646\u0642\u062f\u064a\u0629">')+'</div>';
  body+='<div class="fr2">'+fld('Type','<select id="a-type">'+['Asset','Liability','Equity','Revenue','Expense'].map(function(t){return '<option'+(a.type===t?' selected':'')+'>'+t+'</option>';}).join('')+'</select>')+fld('Normal','<select id="a-norm"><option'+(a.normal==='Debit'?' selected':'')+'>Debit</option><option'+(a.normal==='Credit'?' selected':'')+'>Credit</option></select>')+'</div>';
  if(isSub||a.editId)body+=fld('Current Balance','<input id="a-bal" type="number" value="'+(a.bal||0)+'">');
  return wrap(a.editId?'Edit Account':isSub?'New Sub-Account':'New Main Account',body,'mSaveAcc','Save');
@@ -2061,6 +2632,49 @@ function mVoucher(){
 
 // ═══ ACTIONS (called from onclick) ═══════════════════════════
 window.xAction=function(type){
+ // Inventory actions
+ if(type==='addItem'){tItem={};modal='item';render();return;}
+ if(type==='addPI'){tPI={isReturn:false};modal='pi';render();return;}
+ if(type==='addPR'){tPI={isReturn:true};modal='pi';render();return;}
+ if(type==='addSI'){tSI={isReturn:false};modal='si';render();return;}
+ if(type==='addSR'){tSI={isReturn:true};modal='si';render();return;}
+ if(type==='printsi'){return;} // handled by data-printsi
+ if(type==='printpi'){return;} // handled by data-printpi
+ if(type==='xlsStock'){
+  var aoa=[['Code','Item','Unit','Qty','Avg Cost','Value','Sale Price']];
+  (db.items||[]).forEach(function(it){aoa.push([it.id,it.name,it.unit||'pcs',it.qty||0,it.avgCost||0,(it.qty||0)*(it.avgCost||0),it.salePrice||0]);});
+  exportXLS(aoa,'Stock','Stock_'+today());return;
+ }
+ if(type==='xlsStockRpt'){
+  var sf=stockFrom,st=stockTo;
+  var aoa2=[['Code','Item','Unit','Qty In','Qty Out','Balance','Avg Cost','Value']];
+  if(sf||st)aoa2.unshift(['Period: '+(sf||'All')+' to '+(st||'All')]);
+  (db.items||[]).forEach(function(it){
+   var qIn=0,qOut=0;
+   (db.purchaseInvoices||[]).forEach(function(pi){if(!pi.posted)return;if(sf&&pi.date<sf)return;if(st&&pi.date>st)return;pi.lines.forEach(function(l){if(l.itemId!==it.id)return;if(pi.type==='return')qOut+=l.qty;else qIn+=l.qty;});});
+   (db.salesInvoices2||[]).forEach(function(si){if(!si.posted)return;if(sf&&si.date<sf)return;if(st&&si.date>st)return;si.lines.forEach(function(l){if(l.itemId!==it.id)return;if(si.type==='return')qIn+=l.qty;else qOut+=l.qty;});});
+   aoa2.push([it.id,it.name,it.unit||'pcs',qIn,qOut,it.qty||0,it.avgCost||0,(it.qty||0)*(it.avgCost||0)]);
+  });
+  exportXLS(aoa2,'StockReport','StockReport_'+today());return;
+ }
+ if(type==='pdfStockRpt'){
+  var hS='<table><thead><tr><th>Code</th><th>Item</th><th>Qty</th><th class="tr">Avg Cost</th><th class="tr">Value</th></tr></thead><tbody>';
+  var totV=0;
+  (db.items||[]).forEach(function(it){var v=(it.qty||0)*(it.avgCost||0);totV+=v;hS+='<tr><td>'+it.id+'</td><td>'+it.name+'</td><td class="tr">'+( it.qty||0).toFixed(2)+'</td><td class="tr">'+N(it.avgCost||0)+'</td><td class="tr">'+N(v)+'</td></tr>';});
+  hS+='<tr class="fin"><td colspan="4">Total</td><td class="tr">'+N(totV)+'</td></tr></tbody></table>';
+  printHTML('Stock Report',hS);return;
+ }
+ if(type==='xlsPI'){
+  var aoa3=[['Ref','Date','Supplier','Type','Subtotal','VAT','Total','Status']];
+  (db.purchaseInvoices||[]).forEach(function(p){aoa3.push([p.id,p.date,p.supplierName||'',p.type==='return'?'Return':'Purchase',p.subtotal||0,p.vat||0,p.total||0,p.posted?'Posted':'Draft']);});
+  exportXLS(aoa3,'Purchases','Purchases_'+today());return;
+ }
+ if(type==='xlsSI'){
+  var aoa4=[['Ref','Date','Customer','Type','Subtotal','VAT','Total','Status']];
+  (db.salesInvoices2||[]).forEach(function(s){aoa4.push([s.id,s.date,s.customerName||'',s.type==='return'?'Return':'Sale',s.subtotal||0,s.vat||0,s.total||0,s.posted?'Posted':'Draft']);});
+  exportXLS(aoa4,'Sales','Sales_'+today());return;
+ }
+ if(type==='importCoA'){importCoA();return;}
  if(type==='editOB'){modal='ob';render();return;}
  if(type==='addFA'){tFAEdit={};modal='fa';render();return;}
  if(type==='backFA'){tFA=null;view='fixedassets';render();return;}
@@ -2385,6 +2999,7 @@ function bindEvents(){
  on1('mSaveAcc','click',function(){
   var id=((document.getElementById('a-id')||{}).value||'').trim();
   var name=((document.getElementById('a-name')||{}).value||'').trim();
+  var nameAr=((document.getElementById('a-namear')||{}).value||'').trim();
   var type=(document.getElementById('a-type')||{}).value||'Asset';
   var norm=(document.getElementById('a-norm')||{}).value||'Debit';
   var balEl=document.getElementById('a-bal'),bal=balEl?Number(balEl.value)||0:0;
@@ -2392,7 +3007,7 @@ function bindEvents(){
   var isSub=!tAcc.isMain;
   if(!id||!name){alert('Fill code and name.');return;}
   if(isSub&&!parentId&&!tAcc.editId){alert('Please select a parent account.');return;}
-  if(tAcc.editId){var a=db.accounts.find(function(x){return x.id===tAcc.editId;});if(a)Object.assign(a,{id:id,name:name,type:type,normal:norm,bal:bal,pid:parentId||a.pid||undefined,isMain:!isSub});}
+  if(tAcc.editId){var a=db.accounts.find(function(x){return x.id===tAcc.editId;});if(a)Object.assign(a,{id:id,name:name,nameAr:nameAr,type:type,normal:norm,bal:bal,pid:parentId||a.pid||undefined,isMain:!isSub});}
   else{if(db.accounts.find(function(a){return a.id===id;})){alert('Code exists.');return;}if(isSub)db.accounts.push({id:id,name:name,type:type,bal:bal,normal:norm,pid:parentId});else{db.accounts.push({id:id,name:name,type:type,bal:0,normal:norm,isMain:true});db.exp[id]=true;}}
   modal=null;save();render();
  });
@@ -2947,6 +3562,123 @@ function bindEvents(){
   a.accDepreciation=(a.accDepreciation||0)+monthDep;
   save();render();alert('Depreciation of '+N(monthDep)+' posted. JE: '+je2.id);
  });
+
+ // ── Inventory Handlers ────────────────────────────────
+ on('[data-edititem]','click',function(el){var it=(db.items||[]).find(function(x){return x.id===el.dataset.edititem;});if(it){tItem=Object.assign({},it,{editId:it.id});modal='item';render();}});
+ on('[data-delitem]','click',function(el){if(confirm('Delete item?')){db.items=(db.items||[]).filter(function(x){return x.id!==el.dataset.delitem;});save();render();}});
+ on1('mSaveItem','click',function(){
+  var id2=((document.getElementById('it-id')||{}).value||'').trim();
+  var nm=((document.getElementById('it-name')||{}).value||'').trim();
+  var nmAr=((document.getElementById('it-namear')||{}).value||'').trim();
+  var unit2=(document.getElementById('it-unit')||{}).value||'pcs';
+  var sp=Number((document.getElementById('it-sp')||{}).value)||0;
+  var rq=Number((document.getElementById('it-rq')||{}).value)||0;
+  var invAcc=((document.getElementById('it-invacc')||{}).value||'').trim();
+  var cogs=((document.getElementById('it-cogs')||{}).value||'').trim();
+  var rev=((document.getElementById('it-rev')||{}).value||'').trim();
+  if(!id2||!nm){alert('Fill code and name.');return;}
+  var obj2={id:id2,name:nm,nameAr:nmAr,unit:unit2,salePrice:sp,reorderQty:rq,invAccId:invAcc,cogsAccId:cogs,revAccId:rev,qty:tItem.qty||0,avgCost:tItem.avgCost||0};
+  if(tItem.editId){var ix=(db.items||[]).findIndex(function(x){return x.id===tItem.editId;});if(ix!==-1)db.items[ix]=Object.assign(db.items[ix],obj2);}
+  else{if((db.items||[]).find(function(x){return x.id===id2;})){alert('Code exists.');return;}if(!db.items)db.items=[];db.items.push(obj2);}
+  modal=null;save();render();
+ });
+ on('.piItem','change',function(el){var i=el.dataset.i;var it=(db.items||[]).find(function(x){return x.id===el.value;});if(it){var c=document.querySelector('.piCost[data-i="'+i+'"]');if(c)c.value=it.avgCost||0;}updatePITotals();});
+ on('.piQty','input',function(){updatePITotals();});
+ on('.piCost','input',function(){updatePITotals();});
+ on('.piVat','change',function(){updatePITotals();});
+ on('[data-rmpiline]','click',function(el){var tr=document.getElementById('pil-'+el.dataset.rmpiline);if(tr)tr.remove();updatePITotals();});
+ on1('piAddLine','click',function(){var tb2=document.getElementById('piLines');if(!tb2)return;var i=tb2.querySelectorAll('tr').length;var tr=document.createElement('tr');tr.id='pil-'+i;tr.innerHTML='<td><select class="piItem" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="">— Item —</option>'+(db.items||[]).map(function(it){return '<option value="'+it.id+'">'+it.id+' - '+it.name+'</option>';}).join('')+'</select></td><td><input type="number" class="piQty" data-i="'+i+'" value="1" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"></td><td><input type="number" class="piCost" data-i="'+i+'" value="0" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"></td><td><select class="piVat" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"><option>0%</option><option>5%</option><option selected>15%</option></select></td><td class="tr piLineTotal" data-i="'+i+'" style="padding:5px">0.00</td><td><button class="btn bsm bdr" data-rmpiline="'+i+'">✕</button></td>';tb2.appendChild(tr);});
+ on1('mSavePI','click',function(){
+  var id3=((document.getElementById('pi-id')||{}).value||'').trim()||nextPI();
+  var dt3=((document.getElementById('pi-date')||{}).value||today());
+  var supId=(document.getElementById('pi-sup')||{}).value||'';
+  var supNm=supId?((db.suppliers||[]).find(function(s){return s.id===supId;})||{name:''}).name:'';
+  var lines3=[];
+  document.querySelectorAll('.piItem').forEach(function(sel){
+   var i4=sel.dataset.i;var itemId=sel.value;if(!itemId)return;
+   var qty4=Number((document.querySelector('.piQty[data-i="'+i4+'"]')||{}).value)||0;
+   var cost4=Number((document.querySelector('.piCost[data-i="'+i4+'"]')||{}).value)||0;
+   var vatEl=(document.querySelector('.piVat[data-i="'+i4+'"]')||{});
+   var vat4=Number((vatEl.value||'').replace('%',''))||0;
+   if(qty4>0)lines3.push({itemId:itemId,qty:qty4,cost:cost4,vat:vat4});
+  });
+  if(!lines3.length){alert('Add at least one item.');return;}
+  var sub3=lines3.reduce(function(s,l){return s+l.qty*l.cost;},0);
+  var vat3=lines3.reduce(function(s,l){return s+l.qty*l.cost*l.vat/100;},0);
+  var pi2={id:id3,date:dt3,supplierId:supId,supplierName:supNm,lines:lines3,subtotal:sub3,vat:vat3,total:sub3+vat3,type:tPI.isReturn?'return':'purchase',posted:false};
+  if(!db.purchaseInvoices)db.purchaseInvoices=[];
+  if(!db.purchaseInvoices.find(function(x){return x.id===id3;}))db.purchaseInvoices.push(pi2);
+  modal=null;save();render();
+ });
+ on('[data-postpi]','click',function(el){
+  var pi3=(db.purchaseInvoices||[]).find(function(x){return x.id===el.dataset.postpi;});
+  if(!pi3||pi3.posted)return;
+  var isRet=pi3.type==='return';
+  pi3.lines.forEach(function(l){if(isRet){var it3=itemById(l.itemId);if(it3)it3.qty=Math.max(0,(it3.qty||0)-l.qty);}else receiveStock(l.itemId,l.qty,l.cost);});
+  var jeL=[];
+  if(!isRet){
+   pi3.lines.forEach(function(l){var it4=itemById(l.itemId);if(it4&&it4.invAccId)jeL.push({acc:it4.invAccId,dr:l.qty*l.cost,cr:0});});
+   if(pi3.vat>0){var vA=(db.accounts||[]).find(function(a){return a.id==='2002'||( a.name&&a.name.toLowerCase().indexOf('vat input')!==-1);});if(vA)jeL.push({acc:vA.id,dr:pi3.vat,cr:0});}
+   var apA=(db.accounts||[]).find(function(a){return a.type==='Liability'&&!a.isMain&&a.name&&a.name.toLowerCase().indexOf('payable')!==-1;});
+   if(apA)jeL.push({acc:apA.id,dr:0,cr:pi3.total});
+  }
+  if(jeL.length){var je4={id:'JE'+String(db.journals.length+1).padStart(3,'0'),date:pi3.date,desc:(isRet?'Purchase Return: ':'Purchase Invoice: ')+pi3.id,lines:jeL};db.journals.push(je4);pi3.jeId=je4.id;jeL.forEach(function(l){var a=db.accounts.find(function(x){return x.id===l.acc;});if(a){if(a.normal==='Debit')a.bal=(a.bal||0)+(l.dr-l.cr);else a.bal=(a.bal||0)+(l.cr-l.dr);}});}
+  pi3.posted=true;save();render();alert('Posted! JE: '+(pi3.jeId||'N/A'));
+ });
+ on('.siItem','change',function(el){var i2=el.dataset.i;var it2=(db.items||[]).find(function(x){return x.id===el.value;});if(it2){var p2=document.querySelector('.siPrice[data-i="'+i2+'"]');if(p2)p2.value=it2.salePrice||0;}updateSITotals();});
+ on('.siQty','input',function(){updateSITotals();});
+ on('.siPrice','input',function(){updateSITotals();});
+ on('.siVat','change',function(){updateSITotals();});
+ on('[data-rmsiline]','click',function(el){var tr2=document.getElementById('sil-'+el.dataset.rmsiline);if(tr2)tr2.remove();updateSITotals();});
+ on1('siAddLine','click',function(){var tb3=document.getElementById('siLines');if(!tb3)return;var i2=tb3.querySelectorAll('tr').length;var tr2=document.createElement('tr');tr2.id='sil-'+i2;tr2.innerHTML='<td><select class="siItem" data-i="'+i2+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="">— Item —</option>'+(db.items||[]).map(function(it){return '<option value="'+it.id+'">'+it.id+' - '+it.name+' ['+( it.qty||0).toFixed(0)+']</option>';}).join('')+'</select></td><td><input type="number" class="siQty" data-i="'+i2+'" value="1" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"></td><td><input type="number" class="siPrice" data-i="'+i2+'" value="0" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"></td><td><select class="siVat" data-i="'+i2+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"><option>0%</option><option>5%</option><option selected>15%</option></select></td><td class="tr siLineTotal" data-i="'+i2+'" style="padding:5px">0.00</td><td><button class="btn bsm bdr" data-rmsiline="'+i2+'">✕</button></td>';tb3.appendChild(tr2);});
+ on1('mSaveSI','click',function(){
+  var id5=((document.getElementById('si-id')||{}).value||'').trim()||nextSI();
+  var dt5=((document.getElementById('si-date')||{}).value||today());
+  var cusId=(document.getElementById('si-cus')||{}).value||'';
+  var cusNm=cusId?((db.customers||[]).find(function(c){return c.id===cusId;})||{name:''}).name:'';
+  var lines5=[];
+  document.querySelectorAll('.siItem').forEach(function(sel){
+   var i6=sel.dataset.i;var itemId5=sel.value;if(!itemId5)return;
+   var qty6=Number((document.querySelector('.siQty[data-i="'+i6+'"]')||{}).value)||0;
+   var price6=Number((document.querySelector('.siPrice[data-i="'+i6+'"]')||{}).value)||0;
+   var vatEl2=(document.querySelector('.siVat[data-i="'+i6+'"]')||{});
+   var vat6=Number((vatEl2.value||'').replace('%',''))||0;
+   if(qty6>0)lines5.push({itemId:itemId5,qty:qty6,price:price6,vat:vat6});
+  });
+  if(!lines5.length){alert('Add at least one item.');return;}
+  var sub5=lines5.reduce(function(s,l){return s+l.qty*l.price;},0);
+  var vat5=lines5.reduce(function(s,l){return s+l.qty*l.price*l.vat/100;},0);
+  var si2={id:id5,date:dt5,customerId:cusId,customerName:cusNm,lines:lines5,subtotal:sub5,vat:vat5,total:sub5+vat5,type:tSI.isReturn?'return':'sale',posted:false};
+  if(!db.salesInvoices2)db.salesInvoices2=[];
+  if(!db.salesInvoices2.find(function(x){return x.id===id5;}))db.salesInvoices2.push(si2);
+  modal=null;save();render();
+ });
+ on('[data-postsi]','click',function(el){
+  var si3=(db.salesInvoices2||[]).find(function(x){return x.id===el.dataset.postsi;});
+  if(!si3||si3.posted)return;
+  var isRet5=si3.type==='return';
+  var cogsT=0;
+  si3.lines.forEach(function(l){if(isRet5){var avg=(itemById(l.itemId)||{avgCost:0}).avgCost;receiveStock(l.itemId,l.qty,avg);}else{var c5=issueStock(l.itemId,l.qty);cogsT+=c5*l.qty;}});
+  var jeL2=[];
+  if(!isRet5){
+   var arA=(db.accounts||[]).find(function(a){return a.type==='Asset'&&!a.isMain&&a.name&&a.name.toLowerCase().indexOf('receivable')!==-1;});
+   var firstIt=si3.lines.length?itemById(si3.lines[0].itemId):null;
+   var revId=firstIt&&firstIt.revAccId?firstIt.revAccId:((db.accounts||[]).find(function(a){return a.type==='Revenue'&&!a.isMain;})||{}).id;
+   if(arA)jeL2.push({acc:arA.id,dr:si3.total,cr:0});
+   if(si3.vat>0){var vP=(db.accounts||[]).find(function(a){return a.type==='Liability'&&!a.isMain&&a.name&&a.name.toLowerCase().indexOf('vat')!==-1;});if(vP)jeL2.push({acc:vP.id,dr:0,cr:si3.vat});}
+   if(revId)jeL2.push({acc:revId,dr:0,cr:si3.subtotal});
+   if(cogsT>0){var cId=firstIt&&firstIt.cogsAccId;var iId=firstIt&&firstIt.invAccId;if(cId&&iId){jeL2.push({acc:cId,dr:cogsT,cr:0});jeL2.push({acc:iId,dr:0,cr:cogsT});}}
+  }
+  if(jeL2.length){var je6={id:'JE'+String(db.journals.length+1).padStart(3,'0'),date:si3.date,desc:(isRet5?'Sales Return: ':'Sales Invoice: ')+si3.id,lines:jeL2};db.journals.push(je6);si3.jeId=je6.id;jeL2.forEach(function(l){var a=db.accounts.find(function(x){return x.id===l.acc;});if(a){if(a.normal==='Debit')a.bal=(a.bal||0)+(l.dr-l.cr);else a.bal=(a.bal||0)+(l.cr-l.dr);}});}
+  si3.posted=true;save();render();alert('Posted! JE: '+(si3.jeId||'N/A'));
+ });
+ on('[data-printsi]','click',function(el){printSalesInvoice(el.dataset.printsi);});
+ on('[data-printpi]','click',function(el){printPurchaseInvoice(el.dataset.printpi);});
+ on('[data-delpi]','click',function(el){if(confirm('Delete?')){db.purchaseInvoices=(db.purchaseInvoices||[]).filter(function(x){return x.id!==el.dataset.delpi;});save();render();}});
+ on('[data-delsi]','click',function(el){if(confirm('Delete?')){db.salesInvoices2=(db.salesInvoices2||[]).filter(function(x){return x.id!==el.dataset.delsi;});save();render();}});
+
+ on1('btnApplyStock','click',function(){stockFrom=(document.getElementById('stockFrom')||{}).value||'';stockTo=(document.getElementById('stockTo')||{}).value||'';render();});
+ on1('btnClearStock','click',function(){stockFrom='';stockTo='';render();});
  on1('btnBackContact','click',function(){cusView=supView=null;render();});
  on1('btnNewInvCus','click',function(){if(!cusView)return;tInv={editId:null,client:cusView.name,clientId:cusView.id,date:today(),vatNo:cusView.vatNo||'',items:[{desc:'',qty:1,rate:'',vat:vatR()}]};modal='inv';render();});
  // Suppliers
