@@ -163,14 +163,75 @@ var DEF = {"users":[{"id":"admin","name":"Administrator","username":"admin","rol
 
 var db;
 
+// ═══════════════════════════════════════════════════════════════
+// MULTI-COMPANY SYSTEM
+// Firebase structure: accountpro-db/companies/{companyId}/...
+//                     accountpro-db/companies_list
+// localStorage:       ap7_companies_list
+//                     ap7_{companyId}
+// ═══════════════════════════════════════════════════════════════
+var currentCompanyId = null;   // active company id
+var companiesList = [];        // [{id,name,address,createdAt}]
+var fbRef = null;              // Firebase ref for active company
+
 var HAS_CLOUD=false;
+var fbRootRef=null;
+
 try{
- if(typeof firebase!=='undefined'){
+ if(typeof firebase!=='undefined' && typeof FB_CONFIG!=='undefined' && FB_CONFIG && FB_CONFIG.apiKey){
   firebase.initializeApp(FB_CONFIG);
-  fbRef=firebase.database().ref('accountpro-db');
+  fbRootRef=firebase.database().ref('accountpro-db');
   HAS_CLOUD=true;
  }
-}catch(e){HAS_CLOUD=false;}
+}catch(e){HAS_CLOUD=false;fbRootRef=null;}
+
+// — Companies List helpers —
+function lsCompanyKey(id){return 'ap7_'+id;}
+function lsListKey(){return 'ap7_companies_list';}
+
+function loadCompaniesList(){
+ try{
+  var s=localStorage.getItem(lsListKey());
+  if(s){var d=JSON.parse(s);if(Array.isArray(d))return d;}
+ }catch(e){}
+ return [];
+}
+function saveCompaniesList(list){
+ try{localStorage.setItem(lsListKey(),JSON.stringify(list));}catch(e){}
+}
+
+function loadCompaniesListCloud(){
+ if(HAS_CLOUD&&fbRootRef){
+  return fbRootRef.child('companies_list').once('value').then(function(snap){
+   var val=snap.val();
+   if(Array.isArray(val))return val;
+   return loadCompaniesList(); // fallback to local
+  }).catch(function(){return loadCompaniesList();});
+ }
+ return Promise.resolve(loadCompaniesList());
+}
+function saveCompaniesListCloud(list){
+ saveCompaniesList(list);
+ if(HAS_CLOUD&&fbRootRef){
+  fbRootRef.child('companies_list').set(list).catch(function(){});
+ }
+}
+
+function genCompanyId(){
+ return 'co_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7);
+}
+
+function setActiveCompany(id){
+ currentCompanyId=id;
+ try{localStorage.setItem('ap7_active_company',id);}catch(e){}
+ if(HAS_CLOUD&&fbRootRef){
+  fbRef=fbRootRef.child('companies/'+id);
+ }
+}
+
+function getActiveCompanyId(){
+ try{return localStorage.getItem('ap7_active_company')||null;}catch(e){return null;}
+}
 
 function normalizeDB(d){
  if(!d.exp)d.exp={};
@@ -210,13 +271,15 @@ function normalizeDB(d){
  return d;
 }
 function loadFromLocalStorage(){
+ if(!currentCompanyId)return normalizeDB(JSON.parse(JSON.stringify(DEF)));
  try{
-  var s=localStorage.getItem('ap7');
+  var s=localStorage.getItem(lsCompanyKey(currentCompanyId));
   if(s){var d=JSON.parse(s);if(d&&Array.isArray(d.accounts))return normalizeDB(d);}
- }catch(e){try{localStorage.removeItem('ap7');}catch(e2){}}
+ }catch(e){try{localStorage.removeItem(lsCompanyKey(currentCompanyId));}catch(e2){}}
  return normalizeDB(JSON.parse(JSON.stringify(DEF)));
 }
 function loadDB(){
+ if(!currentCompanyId)return Promise.resolve(normalizeDB(JSON.parse(JSON.stringify(DEF))));
  if(HAS_CLOUD&&fbRef){
   return fbRef.once('value').then(function(snap){
    var val=snap.val();
@@ -234,6 +297,8 @@ var view='coa',modal=null,invView=null,cusView=null,supView=null;
 var fAcc='',fFrom='',fTo='',stimer=null,lastSave=null;
 var tAcc={},tJE={},tInv={},tCus={},tSup={},tRcpt={},tPymt={},tCC={},tUser={};
 var tFAEdit={},tFA=null,tLocEdit={};
+var tCompany={};   // for company add/edit modal
+var appState='selectCompany'; // 'selectCompany' | 'app'
 var currentUser=null;
 var rptFrom='',rptTo='',rptLevel='all'; // report filters
 
@@ -385,7 +450,7 @@ function save(){
  stimer=setTimeout(function(){
   var el=document.getElementById('sv');
   // Always save locally as instant backup
-  try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
+  try{localStorage.setItem(lsCompanyKey(currentCompanyId),JSON.stringify(db));}catch(e){}
   if(HAS_CLOUD&&fbRef){
    if(el)el.textContent='Saving to cloud...';
    skipNextRemote=true;
@@ -449,209 +514,102 @@ function printHTML(title,body){
 
 
 
-// QR Code Generator - Correct Reed-Solomon Implementation
-// Supports Version 1-5, Error Correction Level M
+// ══════════════════════════════════════════════════════
+// QR Code Generator — Fully Embedded, works offline
+// ══════════════════════════════════════════════════════
 var QRJS=(function(){
 "use strict";
-
-// GF(256) arithmetic
-var EXP=new Array(512),LOG=new Array(256);
-(function(){var x=1;for(var i=0;i<255;i++){EXP[i]=x;LOG[x]=i;x=x*2;if(x>=256)x^=285;}for(var i=255;i<512;i++)EXP[i]=EXP[i-255];})();
-function mul(a,b){if(!a||!b)return 0;return EXP[LOG[a]+LOG[b]];}
-function div(a,b){if(!b)throw "div0";return EXP[((LOG[a]-LOG[b])+255)%255];}
-
-// Reed-Solomon error correction
-function rsGenerator(n){
- var g=[1];
- for(var i=0;i<n;i++){g=polyMul(g,[1,EXP[i]]);}
- return g;
-}
-function polyMul(p,q){
- var r=new Array(p.length+q.length-1).fill(0);
- for(var i=0;i<p.length;i++)
-  for(var j=0;j<q.length;j++)
-   r[i+j]^=mul(p[i],q[j]);
- return r;
-}
-function rsEncode(data,ecLen){
- var gen=rsGenerator(ecLen);
- var msg=data.slice().concat(new Array(ecLen).fill(0));
- for(var i=0;i<data.length;i++){
-  var c=msg[i];
-  if(c){for(var j=0;j<gen.length;j++)msg[i+j]^=mul(gen[j],c);}
- }
- return msg.slice(data.length);
-}
-
-// QR Code parameters for versions 1-5, ECC M
-var PARAMS={
- 1:{size:21,dcw:16,ecw:10,bl:1,bdc:16},
- 2:{size:25,dcw:28,ecw:16,bl:1,bdc:28},
- 3:{size:29,dcw:44,ecw:26,bl:2,bdc:22},
- 4:{size:33,dcw:64,ecw:18,bl:2,bdc:32},
- 5:{size:37,dcw:86,ecw:24,bl:2,bdc:43}
+var QR8bitByte=function(d){this.mode=4;this.data=d;this.parsedData=[];var a=[];for(var i=0;i<d.length;i++){var c=d.charCodeAt(i);if(c<128){a.push(c);}else if(c<2048){a.push(0xC0|(c>>6));a.push(0x80|(c&0x3F));}else{a.push(0xE0|(c>>12));a.push(0x80|((c>>6)&0x3F));a.push(0x80|(c&0x3F));}}this.parsedData=a;};
+QR8bitByte.prototype={getLength:function(){return this.parsedData.length;},write:function(buf){for(var i=0;i<this.parsedData.length;i++){buf.put(this.parsedData[i],8);}}};
+var QRPolynomial=function(num,shift){var offset=0;while(offset<num.length&&num[offset]==0)offset++;this.num=new Array(num.length-offset+shift);for(var i=0;i<num.length-offset;i++)this.num[i]=num[i+offset];};
+QRPolynomial.prototype={get:function(i){return this.num[i];},getLength:function(){return this.num.length;},multiply:function(e){var num=new Array(this.getLength()+e.getLength()-1);for(var i=0;i<num.length;i++)num[i]=0;for(var i=0;i<this.getLength();i++)for(var j=0;j<e.getLength();j++)num[i+j]^=QRMath.gexp(QRMath.glog(this.get(i))+QRMath.glog(e.get(j)));return new QRPolynomial(num,0);},mod:function(e){if(this.getLength()-e.getLength()<0)return this;var ratio=QRMath.glog(this.get(0))-QRMath.glog(e.get(0));var num=new Array(this.getLength());for(var i=0;i<this.getLength();i++)num[i]=this.get(i);for(var i=0;i<e.getLength();i++)num[i]^=QRMath.gexp(QRMath.glog(e.get(i))+ratio);return new QRPolynomial(num,0).mod(e);}};
+var QRMath={glog:function(n){if(n<1)throw new Error("glog("+n+")");return QRMath.LOG_TABLE[n];},gexp:function(n){while(n<0)n+=255;while(n>=256)n-=255;return QRMath.EXP_TABLE[n];},EXP_TABLE:new Array(256),LOG_TABLE:new Array(256)};
+for(var i=0;i<8;i++)QRMath.EXP_TABLE[i]=1<<i;
+for(var i=8;i<256;i++)QRMath.EXP_TABLE[i]=QRMath.EXP_TABLE[i-4]^QRMath.EXP_TABLE[i-5]^QRMath.EXP_TABLE[i-6]^QRMath.EXP_TABLE[i-8];
+for(var i=0;i<255;i++)QRMath.LOG_TABLE[QRMath.EXP_TABLE[i]]=i;
+var QRRSBlock=function(tc,dc){this.totalCount=tc;this.dataCount=dc;};
+QRRSBlock.RS_BLOCK_TABLE=[[1,26,19,0,0,0],[1,44,34,0,0,0],[1,70,55,0,0,0],[2,50,40,0,0,0],[2,67,53,0,0,0],[2,86,69,0,0,0],[4,101,80,0,0,0],[4,122,98,0,0,0],[2,86,67,2,98,79],[2,90,69,2,102,83]];
+QRRSBlock.getRSBlocks=function(tn,el){var t=QRRSBlock.RS_BLOCK_TABLE[tn-1];if(!t)throw new Error("bad rs block @ tn:"+tn);var list=[];var len=t.length/3;for(var i=0;i<len;i++){var cnt=t[i*3+0];var tc=t[i*3+1];var dc=t[i*3+2];for(var j=0;j<cnt;j++)list.push(new QRRSBlock(tc,dc));}return list;};
+var QRBitBuffer=function(){this.buffer=[];this.length=0;};
+QRBitBuffer.prototype={get:function(i){return((this.buffer[Math.floor(i/8)]>>>(7-i%8))&1)==1;},put:function(num,len){for(var i=0;i<len;i++)this.putBit(((num>>>(len-i-1))&1)==1);},getLengthInBits:function(){return this.length;},putBit:function(bit){var bi=Math.floor(this.length/8);if(this.buffer.length<=bi)this.buffer.push(0);if(bit)this.buffer[bi]|=(0x80>>>(this.length%8));this.length++;}};
+var QRUtil={G15:(1<<10)|(1<<8)|(1<<5)|(1<<4)|(1<<2)|(1<<1)|(1<<0),G15_MASK:(1<<14)|(1<<12)|(1<<10)|(1<<4)|(1<<1),
+getBCHTypeInfo:function(d){var x=d<<10;while(QRUtil.getBCHDigit(x)-QRUtil.getBCHDigit(QRUtil.G15)>=0)x^=(QRUtil.G15<<(QRUtil.getBCHDigit(x)-QRUtil.getBCHDigit(QRUtil.G15)));return((d<<10)|x)^QRUtil.G15_MASK;},
+getBCHDigit:function(d){var n=0;while(d!=0){n++;d>>>=1;}return n;},
+getMask:function(mp,i,j){switch(mp){case 0:return(i+j)%2==0;case 1:return i%2==0;case 2:return j%3==0;case 3:return(i+j)%3==0;case 4:return(Math.floor(i/2)+Math.floor(j/3))%2==0;case 5:return(i*j)%2+(i*j)%3==0;case 6:return((i*j)%2+(i*j)%3)%2==0;case 7:return((i+j)%2+(i*j)%3)%2==0;}return false;},
+getErrorCorrectPolynomial:function(n){var a=new QRPolynomial([1],0);for(var i=0;i<n;i++)a=a.multiply(new QRPolynomial([1,QRMath.gexp(i)],0));return a;},
+getLostPoint:function(qr){var mc=qr.getModuleCount();var lp=0;for(var r=0;r<mc;r++){for(var c=0;c<mc;c++){var sc=0;var dark=qr.isDark(r,c);for(var dr=-1;dr<=1;dr++)for(var dc=-1;dc<=1;dc++){if(r+dr<0||mc<=r+dr||c+dc<0||mc<=c+dc||dr==0&&dc==0)continue;if(dark==qr.isDark(r+dr,c+dc))sc++;}if(sc>5)lp+=(3+sc-5);}}return lp;}};
+var QRCodeModel=function(tn,el){this.typeNumber=tn;this.errorCorrectLevel=el;this.modules=null;this.moduleCount=0;this.dataCache=null;this.dataList=[];};
+QRCodeModel.prototype={
+addData:function(d){this.dataList.push(new QR8bitByte(d));this.dataCache=null;},
+isDark:function(r,c){return this.modules[r][c];},
+getModuleCount:function(){return this.moduleCount;},
+make:function(){this.makeImpl(false,this.getBestMaskPattern());},
+makeImpl:function(test,mp){
+ this.moduleCount=this.typeNumber*4+17;
+ this.modules=[];
+ for(var r=0;r<this.moduleCount;r++){this.modules[r]=[];for(var c=0;c<this.moduleCount;c++)this.modules[r][c]=null;}
+ this.setupPositionProbePattern(0,0);this.setupPositionProbePattern(this.moduleCount-7,0);this.setupPositionProbePattern(0,this.moduleCount-7);
+ this.setupTimingPattern();this.setupTypeInfo(test,mp);
+ if(this.dataCache==null)this.dataCache=QRCodeModel.createData(this.typeNumber,this.errorCorrectLevel,this.dataList);
+ this.mapData(this.dataCache,mp);
+},
+setupPositionProbePattern:function(r,c){for(var dr=-1;dr<=7;dr++){if(r+dr<=-1||this.moduleCount<=r+dr)continue;for(var dc=-1;dc<=7;dc++){if(c+dc<=-1||this.moduleCount<=c+dc)continue;this.modules[r+dr][c+dc]=(dr==0||dr==6||dc==0||dc==6||(dr>=2&&dr<=4&&dc>=2&&dc<=4));}}},
+getBestMaskPattern:function(){var minLost=0;var pat=0;for(var i=0;i<8;i++){this.makeImpl(true,i);var lp=QRUtil.getLostPoint(this);if(i==0||minLost>lp){minLost=lp;pat=i;}}return pat;},
+setupTimingPattern:function(){for(var r=8;r<this.moduleCount-8;r++){if(this.modules[r][6]!=null)continue;this.modules[r][6]=(r%2==0);}for(var c=8;c<this.moduleCount-8;c++){if(this.modules[6][c]!=null)continue;this.modules[6][c]=(c%2==0);}},
+setupTypeInfo:function(test,mp){var data=(1<<3)|mp;var bits=QRUtil.getBCHTypeInfo(data);for(var i=0;i<15;i++){var mod=(!test&&((bits>>i)&1)==1);if(i<6)this.modules[i][8]=mod;else if(i<8)this.modules[i+1][8]=mod;else this.modules[this.moduleCount-15+i][8]=mod;}for(var i=0;i<15;i++){var mod=(!test&&((bits>>i)&1)==1);if(i<8)this.modules[8][this.moduleCount-i-1]=mod;else if(i<9)this.modules[8][15-i-1+1]=mod;else this.modules[8][15-i-1]=mod;}this.modules[this.moduleCount-8][8]=!test;},
+mapData:function(data,mp){var inc=-1;var row=this.moduleCount-1;var bitIdx=7;var byteIdx=0;for(var col=this.moduleCount-1;col>0;col-=2){if(col==6)col--;while(true){for(var c=0;c<2;c++){if(this.modules[row][col-c]==null){var dark=false;if(byteIdx<data.length)dark=((data[byteIdx]>>>bitIdx)&1)==1;var mask=QRUtil.getMask(mp,row,col-c);if(mask)dark=!dark;this.modules[row][col-c]=dark;bitIdx--;if(bitIdx==-1){byteIdx++;bitIdx=7;}}}row+=inc;if(row<0||this.moduleCount<=row){row-=inc;inc=-inc;break;}}}}
 };
-
-function selectVersion(byteLen){
- for(var v=1;v<=5;v++){
-  if(PARAMS[v].dcw-(4)>=byteLen)return v; // reserve 4 bytes for mode+length
+QRCodeModel.PAD0=0xEC;QRCodeModel.PAD1=0x11;
+QRCodeModel.createData=function(tn,el,dataList){
+ var rsBlocks=QRRSBlock.getRSBlocks(tn,el);
+ var buf=new QRBitBuffer();
+ for(var i=0;i<dataList.length;i++){var d=dataList[i];buf.put(d.mode,4);buf.put(d.getLength(),8);d.write(buf);}
+ var tdc=0;for(var i=0;i<rsBlocks.length;i++)tdc+=rsBlocks[i].dataCount;
+ if(buf.getLengthInBits()>tdc*8)throw new Error("overflow("+buf.getLengthInBits()+">"+tdc*8+")");
+ if(buf.getLengthInBits()+4<=tdc*8)buf.put(0,4);
+ while(buf.getLengthInBits()%8!=0)buf.putBit(false);
+ while(true){if(buf.getLengthInBits()>=tdc*8)break;buf.put(QRCodeModel.PAD0,8);if(buf.getLengthInBits()>=tdc*8)break;buf.put(QRCodeModel.PAD1,8);}
+ return QRCodeModel.createBytes(buf,rsBlocks);
+};
+QRCodeModel.createBytes=function(buf,rsBlocks){
+ var offset=0;var maxDc=0;var maxEc=0;
+ var dcdata=new Array(rsBlocks.length);var ecdata=new Array(rsBlocks.length);
+ for(var r=0;r<rsBlocks.length;r++){
+  var dc=rsBlocks[r].dataCount;var ec=rsBlocks[r].totalCount-dc;
+  maxDc=Math.max(maxDc,dc);maxEc=Math.max(maxEc,ec);
+  dcdata[r]=new Array(dc);for(var i=0;i<dcdata[r].length;i++)dcdata[r][i]=0xff&buf.buffer[i+offset];offset+=dc;
+  var rsp=QRUtil.getErrorCorrectPolynomial(ec);
+  var rawp=new QRPolynomial(dcdata[r],rsp.getLength()-1);
+  var modp=rawp.mod(rsp);
+  ecdata[r]=new Array(rsp.getLength()-1);
+  for(var i=0;i<ecdata[r].length;i++){var mi=i+modp.getLength()-ecdata[r].length;ecdata[r][i]=(mi>=0)?modp.get(mi):0;}
  }
- return 5;
-}
-
-// Format string for ECC M, mask 0
-var FORMAT_STR=[1,0,1,0,1,0,0,0,0,0,1,0,0,1,0];
-
-function buildMatrix(v){
- var p=PARAMS[v],n=p.size;
- var M=[];for(var i=0;i<n;i++)M.push(new Int8Array(n).fill(-1));
-
- function setFunc(r,c,v2){if(r>=0&&r<n&&c>=0&&c<n)M[r][c]=v2;}
-
- // Finder patterns
- function finder(r,c){
-  for(var i=-1;i<=7;i++)for(var j=-1;j<=7;j++){
-   var dr=r+i,dc=c+j;
-   if(dr<0||dr>=n||dc<0||dc>=n)continue;
-   if(i===-1||i===7||j===-1||j===7)setFunc(dr,dc,0);
-   else if(i===0||i===6||j===0||j===6)setFunc(dr,dc,1);
-   else if(i>=2&&i<=4&&j>=2&&j<=4)setFunc(dr,dc,1);
-   else setFunc(dr,dc,0);
-  }
- }
- finder(0,0);finder(0,n-7);finder(n-7,0);
-
- // Timing patterns
- for(var i=8;i<n-8;i++){M[6][i]=i%2===0?1:0;M[i][6]=i%2===0?1:0;}
-
- // Dark module
- M[4*v+9][8]=1;
-
- // Format info placeholder (will fill later)
- // Reserve format area
- for(var i=0;i<9;i++){if(M[8][i]===-1)M[8][i]=0;if(M[i][8]===-1)M[i][8]=0;}
- M[8][7]=0;M[8][8]=0;M[7][8]=0;
- for(var i=0;i<8;i++){if(M[8][n-1-i]===-1)M[8][n-1-i]=0;if(M[n-1-i][8]===-1)M[n-1-i][8]=0;}
-
- return M;
-}
-
-function placeFormat(M,n){
- var fs=FORMAT_STR;
- // horizontal top-left
- var hPos=[0,1,2,3,4,5,7,8];
- var hVals=fs.slice(0,8);
- for(var i=0;i<8;i++)M[8][hPos[i]]=hVals[i];
- M[8][n-8]=fs[7];
- for(var i=0;i<7;i++)M[8][n-7+i]=fs[8+i];
- // vertical
- var vVals=fs.slice().reverse();
- var vPos=[0,1,2,3,4,5,7,8];
- for(var i=0;i<8;i++)M[vPos[i]][8]=vVals[i];
- for(var i=0;i<7;i++)M[n-7+i][8]=fs[6-i];
-}
-
-function placeData(M,n,bits){
- var i=0;var dir=-1;var row=n-1;
- for(var col=n-1;col>=1;col-=2){
-  if(col===6)col=5;
-  for(var cnt=0;cnt<n;cnt++){
-   var r=dir===-1?row-cnt:cnt;
-   for(var dx=0;dx<2;dx++){
-    var c=col-(dx===0?0:1);
-    if(M[r][c]===-1){
-     var bit=i<bits.length?bits[i++]:0;
-     // Mask 0: (r+c)%2===0 => flip
-     M[r][c]=(r+c)%2===0?(bit^1):bit;
-    }
-   }
-  }
-  row=dir===-1?0:n-1;dir=-dir;
- }
-}
-
+ var tcc=0;for(var i=0;i<rsBlocks.length;i++)tcc+=rsBlocks[i].totalCount;
+ var data=new Array(tcc);var idx=0;
+ for(var i=0;i<maxDc;i++)for(var r=0;r<rsBlocks.length;r++)if(i<dcdata[r].length)data[idx++]=dcdata[r][i];
+ for(var i=0;i<maxEc;i++)for(var r=0;r<rsBlocks.length;r++)if(i<ecdata[r].length)data[idx++]=ecdata[r][i];
+ return data;
+};
 function encode(text,moduleSize){
- moduleSize=moduleSize||4;
- var bytes=[];
- for(var i=0;i<text.length;i++){
-  var c=text.charCodeAt(i);
-  if(c>255)c=63; // replace non-latin with ?
-  bytes.push(c);
+ moduleSize=moduleSize||5;
+ var typeNumber=1;
+ for(var v=1;v<=10;v++){
+  try{var qr=new QRCodeModel(v,1);qr.addData(text);qr.make();typeNumber=v;break;}catch(e){continue;}
  }
-
- var v=selectVersion(bytes.length);
- var p=PARAMS[v],n=p.size;
-
- // Build data codewords
- var bits=[];
- function addBits(val,len){for(var b=len-1;b>=0;b--)bits.push((val>>b)&1);}
- addBits(4,4); // byte mode
- addBits(bytes.length,8);
- for(var i=0;i<bytes.length;i++)addBits(bytes[i],8);
- // Terminator
- for(var i=0;i<4&&bits.length<p.dcw*8;i++)bits.push(0);
- while(bits.length%8)bits.push(0);
- // Pad codewords
- var pads=[0xEC,0x11],pi=0;
- while(bits.length<p.dcw*8){
-  var pb=pads[pi%2];pi++;
-  addBits(pb,8);
- }
-
- // Split into blocks and add EC
- var cws=[];
- for(var i=0;i<bits.length;i+=8){
-  var bv=0;for(var j=0;j<8;j++)bv=(bv<<1)|bits[i+j];cws.push(bv);
- }
-
- var bl=p.bl,bdc=Math.floor(p.dcw/bl);
- var ecLen=Math.floor(p.ecw/bl);
- var blocks=[];
- for(var b=0;b<bl;b++){
-  var dEnd=(b===bl-1)?p.dcw:((b+1)*bdc);
-  var dStart=b*bdc;
-  var dc=cws.slice(dStart,dEnd);
-  var ec=rsEncode(dc,ecLen);
-  blocks.push({d:dc,e:ec});
- }
-
- // Interleave
- var final2=[];
- var maxD=Math.max.apply(null,blocks.map(function(b){return b.d.length;}));
- for(var i=0;i<maxD;i++)for(var b=0;b<blocks.length;b++)if(i<blocks[b].d.length)final2.push(blocks[b].d[i]);
- for(var i=0;i<ecLen;i++)for(var b=0;b<blocks.length;b++)final2.push(blocks[b].e[i]);
-
- var fb=[];
- for(var i=0;i<final2.length;i++)for(var b=7;b>=0;b--)fb.push((final2[i]>>b)&1);
-
- // Build matrix
- var M=buildMatrix(v);
- placeData(M,n,fb);
- placeFormat(M,n);
-
- // Render as SVG
- var quiet=4;
- var sz=n*moduleSize+quiet*2*moduleSize;
- var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'">';
- svg+='<rect width="'+sz+'" height="'+sz+'" fill="white"/>';
- for(var r=0;r<n;r++){
-  for(var c=0;c<n;c++){
-   if(M[r][c]===1){
-    var x=(c+quiet)*moduleSize,y=(r+quiet)*moduleSize;
-    svg+='<rect x="'+x+'" y="'+y+'" width="'+moduleSize+'" height="'+moduleSize+'" fill="black"/>';
-   }
-  }
- }
+ var qr=new QRCodeModel(typeNumber,1);
+ qr.addData(text);qr.make();
+ var n=qr.getModuleCount();
+ var quiet=4;var sz=(n+quiet*2)*moduleSize;
+ var svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+sz+' '+sz+'" width="'+sz+'" height="'+sz+'">';
+ svg+='<rect width="'+sz+'" height="'+sz+'" fill="#fff"/>';
+ for(var r=0;r<n;r++)for(var c=0;c<n;c++){if(qr.isDark(r,c)){var x=(c+quiet)*moduleSize,y=(r+quiet)*moduleSize;svg+='<rect x="'+x+'" y="'+y+'" width="'+moduleSize+'" height="'+moduleSize+'" fill="#000"/>'; }}
  svg+='</svg>';
  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
 }
-
 return {encode:encode};
 })();
 
 
-// ══════════════════════════════════════════════════════
-// AUTH SYSTEM - Users & Permissions
 // ══════════════════════════════════════════════════════
 var CURRENT_USER = null; // synced with currentUser in render()
 var AUTH_KEY = 'ap_auth';
@@ -799,15 +757,16 @@ function canEdit(mod){return can(mod,'e');}
 function canDel(mod){return can(mod,'d');}
 // Hash password (simple)
 function hashPwd(s){var h=0;for(var i=0;i<s.length;i++){h=(Math.imul(31,h)+s.charCodeAt(i))|0;}return h.toString(36);}
+function sessionKey(){return 'ap_session_'+(currentCompanyId||'default');}
 function saveSession(user){
- try{localStorage.setItem('ap_session',JSON.stringify({uid:user.id,ts:Date.now()}));}catch(e){}
+ try{localStorage.setItem(sessionKey(),JSON.stringify({uid:user.id,ts:Date.now()}));}catch(e){}
 }
 function clearSession(){
- try{localStorage.removeItem('ap_session');}catch(e){}
+ try{localStorage.removeItem(sessionKey());}catch(e){}
 }
 function restoreSession(){
  try{
-  var s=JSON.parse(localStorage.getItem('ap_session')||'null');
+  var s=JSON.parse(localStorage.getItem(sessionKey())||'null');
   if(!s)return false;
   // Session valid for 7 days
   if(Date.now()-s.ts>7*24*60*60*1000){clearSession();return false;}
@@ -841,30 +800,233 @@ function importCoA(){
  alert('Chart of Accounts imported successfully! 138 accounts added.');
 }
 
+// ══════════════════════════════════════════════════════════════
+// COMPANY SELECTION SCREEN
+// ══════════════════════════════════════════════════════════════
+function buildCompanySelect(){
+ var ic_bld='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="28" height="28"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>';
+ var cards='';
+ companiesList.forEach(function(co,idx){
+  cards+='<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:20px 24px;cursor:pointer;transition:box-shadow .15s,border-color .15s;display:flex;align-items:center;gap:16px;margin-bottom:10px" data-selco="'+co.id+'" onmouseover="this.style.boxShadow=\'0 4px 16px rgba(0,0,0,.1)\';this.style.borderColor=\'var(--tx)\'" onmouseout="this.style.boxShadow=\'\';this.style.borderColor=\'var(--bd)\'">'
+   +'<div style="background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;flex-shrink:0;color:var(--tx)">'+ic_bld+'</div>'
+   +'<div style="flex:1;min-width:0">'
+   +'<div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+co.name+'</div>'
+   +'<div style="font-size:12px;color:var(--t2);margin-top:2px">'+( co.address||'—')+'</div>'
+   +'<div style="font-size:11px;color:var(--t3);margin-top:2px">أُنشئت: '+(co.createdAt||'')+'</div>'
+   +'</div>'
+   +'<div style="display:flex;gap:6px;flex-shrink:0">'
+   +'<button class="btn bsm bg0" data-editco="'+co.id+'" onclick="event.stopPropagation()">✏️</button>'
+   +(companiesList.length>1?'<button class="btn bsm bg0 bdr" data-delco="'+co.id+'" onclick="event.stopPropagation()">🗑️</button>':'')
+   +'</div>'
+   +'</div>';
+ });
+
+ if(!companiesList.length){
+  cards='<div style="text-align:center;padding:40px 20px;color:var(--t3)">'
+   +'<div style="font-size:40px;margin-bottom:12px">🏢</div>'
+   +'<div style="font-size:14px;font-weight:600;color:var(--t2)">لا توجد شركات بعد</div>'
+   +'<div style="font-size:12px;margin-top:6px">أضف شركتك الأولى للبدء</div>'
+   +'</div>';
+ }
+
+ return '<div style="min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px">'
+  +'<div style="width:100%;max-width:540px">'
+  +'<div style="text-align:center;margin-bottom:28px">'
+  +'<div style="font-size:26px;font-weight:800;color:var(--tx)">AccountPro</div>'
+  +'<div style="font-size:13px;color:var(--t2);margin-top:5px">اختر الشركة للمتابعة</div>'
+  +'</div>'
+  +(companiesList.length?'<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">الشركات المسجلة</div>':'')
+  +cards
+  +'<button class="btn bp" id="btnAddCompany" style="width:100%;justify-content:center;margin-top:14px;padding:11px;font-size:13px">＋ إضافة شركة جديدة</button>'
+  +(companiesList.length?'<div style="margin-top:14px;text-align:center"><span style="font-size:11px;color:var(--t3)">AccountPro v2 — Multi-Company</span></div>':'')
+  +'</div></div>'
+  // Company modal overlay
+  +(modal==='company'?buildCompanyModal():'');
+}
+
+function buildCompanyModal(){
+ var co=tCompany||{};
+ var isEdit=!!co.editId;
+ var body='<div class="fg">'
+  +'<div class="fr2">'
+  +fld('اسم الشركة *','<input id="co-name" value="'+(co.name||'')+'" placeholder="مثال: شركة الرياض للتجارة">')
+  +fld('العنوان','<input id="co-addr" value="'+(co.address||'')+'" placeholder="مثال: الرياض، المملكة العربية السعودية">')
+  +'</div>'
+  +'<div class="fr2">'
+  +fld('السجل التجاري','<input id="co-cr" value="'+(co.cr||'')+'">')
+  +fld('الرقم الضريبي (VAT)','<input id="co-vat" value="'+(co.vatNo||'')+'">')
+  +'</div>'
+  +'</div>';
+ return '<div class="ov"><div class="modal" style="max-width:520px">'
+  +'<div class="mh">'+(isEdit?'تعديل بيانات الشركة':'إضافة شركة جديدة')+'</div>'
+  +body
+  +'<div class="mft">'
+  +'<button class="btn" id="mCancelCompany">إلغاء</button>'
+  +'<button class="btn bp" id="mSaveCompany">حفظ</button>'
+  +'</div></div></div>';
+}
+
+function openAddCompany(){tCompany={};modal='company';renderCompanySelect();}
+function openEditCompany(id){
+ var co=companiesList.find(function(c){return c.id===id;});
+ if(!co)return;
+ tCompany={editId:id,name:co.name,address:co.address,cr:co.cr,vatNo:co.vatNo};
+ modal='company';renderCompanySelect();
+}
+
+function renderCompanySelect(){
+ var el=document.getElementById('app');
+ if(!el)return;
+ el.innerHTML=buildCompanySelect();
+ // Bind company card clicks
+ document.querySelectorAll('[data-selco]').forEach(function(el2){
+  el2.addEventListener('click',function(){selectCompanyAndLoad(el2.dataset.selco);});
+ });
+ document.querySelectorAll('[data-editco]').forEach(function(el2){
+  el2.addEventListener('click',function(){openEditCompany(el2.dataset.editco);});
+ });
+ document.querySelectorAll('[data-delco]').forEach(function(el2){
+  el2.addEventListener('click',function(){
+   var id=el2.dataset.delco;
+   var co=companiesList.find(function(c){return c.id===id;});
+   if(!co)return;
+   if(!confirm('حذف شركة "'+co.name+'"؟\nسيتم حذف جميع بياناتها نهائياً!'))return;
+   companiesList=companiesList.filter(function(c){return c.id!==id;});
+   saveCompaniesListCloud(companiesList);
+   // Remove local data
+   try{localStorage.removeItem(lsCompanyKey(id));}catch(e){}
+   if(HAS_CLOUD&&fbRootRef){fbRootRef.child('companies/'+id).remove().catch(function(){});}
+   renderCompanySelect();
+  });
+ });
+ var addBtn=document.getElementById('btnAddCompany');
+ if(addBtn)addBtn.addEventListener('click',openAddCompany);
+ // Modal bindings
+ var cancelBtn=document.getElementById('mCancelCompany');
+ if(cancelBtn)cancelBtn.addEventListener('click',function(){modal=null;renderCompanySelect();});
+ var saveBtn=document.getElementById('mSaveCompany');
+ if(saveBtn)saveBtn.addEventListener('click',function(){
+  var name=(document.getElementById('co-name').value||'').trim();
+  if(!name){alert('اسم الشركة مطلوب');return;}
+  var addr=(document.getElementById('co-addr').value||'').trim();
+  var cr=(document.getElementById('co-cr').value||'').trim();
+  var vatNo=(document.getElementById('co-vat').value||'').trim();
+  if(tCompany.editId){
+   // Edit existing
+   var co=companiesList.find(function(c){return c.id===tCompany.editId;});
+   if(co){co.name=name;co.address=addr;co.cr=cr;co.vatNo=vatNo;}
+   // Also update company info inside db if this is the current company
+   if(tCompany.editId===currentCompanyId&&db){
+    db.company.name=name;db.company.address=addr;db.company.cr=cr;db.company.vatNo=vatNo;
+    save();
+   }
+  } else {
+   var newId=genCompanyId();
+   companiesList.push({id:newId,name:name,address:addr,cr:cr,vatNo:vatNo,createdAt:today()});
+  }
+  saveCompaniesListCloud(companiesList);
+  modal=null;
+  renderCompanySelect();
+ });
+}
+
+function selectCompanyAndLoad(companyId){
+ var co=companiesList.find(function(c){return c.id===companyId;});
+ if(!co)return;
+ // Reset app state for new company
+ currentUser=null;
+ clearSession();
+ lastSave=null;
+ view='coa';
+ modal=null;
+
+ setActiveCompany(companyId);
+
+ // Show loading
+ document.getElementById('app').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Arial,sans-serif;color:var(--t2)"><div style="text-align:center"><div style="font-size:20px;margin-bottom:8px">⏳</div><div>جاري تحميل '+co.name+'...</div></div></div>';
+
+ loadDB().then(function(loaded){
+  db=loaded;
+  // Ensure company info is up to date
+  if(db.company.name!==co.name){db.company.name=co.name;db.company.address=co.address||db.company.address;}
+  appState='app';
+  render();
+  // Live sync listener for this company
+  if(HAS_CLOUD&&fbRef){
+   fbRef.on('value',function(snap){
+    var val=snap.val();
+    if(!val||!Array.isArray(val.accounts))return;
+    if(skipNextRemote){skipNextRemote=false;return;}
+    db=normalizeDB(val);
+    try{localStorage.setItem(lsCompanyKey(currentCompanyId),JSON.stringify(db));}catch(e){}
+    restoreSession();render();
+    var sv=document.getElementById('sv');
+    if(sv)sv.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
+   });
+  }
+ }).catch(function(e){
+  document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">فشل تحميل البيانات: '+e.message+'</div>';
+ });
+}
+
 function render(){
  CURRENT_USER=currentUser;
  var el=document.getElementById('app');
  if(!el)return;
- if(!currentUser){el.innerHTML=buildLogin();setTimeout(function(){var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');if(!bEl)return;function doLogin(){var uv=((uEl&&uEl.value)||'').trim();var pv=((pEl&&pEl.value)||'').trim();var usr=db.users.find(function(x){return x.username===uv&&x.active;});if(!usr||usr.passwordHash!==hashPwd(pv)){var e2=document.getElementById('loginErr');if(e2)e2.style.display='block';return;}currentUser=usr;saveSession(usr);render();}bEl.addEventListener('click',doLogin);if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});var rEl=document.getElementById('btnResetAdmin');if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});},50);return;} try{el.innerHTML=buildLayout();bindEvents();}
+
+ // Show company selection if no company selected
+ if(appState==='selectCompany'||!currentCompanyId){
+  el.innerHTML=buildCompanySelect();
+  // bind events
+  document.querySelectorAll('[data-selco]').forEach(function(el2){
+   el2.addEventListener('click',function(){selectCompanyAndLoad(el2.dataset.selco);});
+  });
+  document.querySelectorAll('[data-editco]').forEach(function(el2){
+   el2.addEventListener('click',function(){openEditCompany(el2.dataset.editco);});
+  });
+  document.querySelectorAll('[data-delco]').forEach(function(el2){
+   el2.addEventListener('click',function(){
+    var id=el2.dataset.delco;
+    var co=companiesList.find(function(c){return c.id===id;});
+    if(!co)return;
+    if(!confirm('حذف شركة "'+co.name+'"؟\nسيتم حذف جميع بياناتها نهائياً!'))return;
+    companiesList=companiesList.filter(function(c){return c.id!==id;});
+    saveCompaniesListCloud(companiesList);
+    try{localStorage.removeItem(lsCompanyKey(id));}catch(e){}
+    if(HAS_CLOUD&&fbRootRef){fbRootRef.child('companies/'+id).remove().catch(function(){});}
+    renderCompanySelect();
+   });
+  });
+  var addBtn=document.getElementById('btnAddCompany');
+  if(addBtn)addBtn.addEventListener('click',openAddCompany);
+  return;
+ }
+
+ if(!currentUser){el.innerHTML=buildLogin();setTimeout(function(){var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');if(!bEl)return;function doLogin(){var uv=((uEl&&uEl.value)||'').trim();var pv=((pEl&&pEl.value)||'').trim();var usr=db.users.find(function(x){return x.username===uv&&x.active;});if(!usr||usr.passwordHash!==hashPwd(pv)){var e2=document.getElementById('loginErr');if(e2){e2.style.display='block';e2.textContent='اسم المستخدم أو كلمة المرور غير صحيحة';}return;}currentUser=usr;saveSession(usr);render();}bEl.addEventListener('click',doLogin);if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});var rEl=document.getElementById('btnResetAdmin');if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});var backBtn=document.getElementById('btnBackToCompanies');if(backBtn)backBtn.addEventListener('click',function(e){e.preventDefault();if(HAS_CLOUD&&fbRef){try{fbRef.off();}catch(ex){}}fbRef=null;currentUser=null;clearSession();currentCompanyId=null;appState='selectCompany';try{localStorage.removeItem('ap7_active_company');}catch(ex){}renderCompanySelect();});},50);return;}
+ try{el.innerHTML=buildLayout();bindEvents();}
  catch(e){el.innerHTML='<div style="color:red;padding:20px;background:#fff1f0;margin:20px;border-radius:8px"><b>Error: </b>'+e.message+'<br><small>'+(e.stack||'').replace(/</g,'&lt;').slice(0,400)+'</small></div>';}
 }
 
 function buildLogin(){
+ var coName=db&&db.company?db.company.name:'AccountPro';
  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'
   +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:360px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
   +'<div style="text-align:center;margin-bottom:28px">'
-  +(db.company.logo?'<img src="'+db.company.logo+'" style="height:60px;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto">':'')
-  +'<div style="font-size:22px;font-weight:800;color:var(--tx)">'+db.company.name+'</div>'
-  +'<div style="font-size:12px;color:var(--t2);margin-top:4px">AccountPro — Sign In</div>'
+  +(db&&db.company&&db.company.logo?'<img src="'+db.company.logo+'" style="height:60px;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto">':'')
+  +'<div style="font-size:13px;color:var(--t3);margin-bottom:6px">🏢 '+coName+'</div>'
+  +'<div style="font-size:22px;font-weight:800;color:var(--tx)">تسجيل الدخول</div>'
+  +'<div style="font-size:12px;color:var(--t2);margin-top:4px">AccountPro</div>'
   +'</div>'
-  +'<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">Username</label>'
-  +'<input id="loginUser" type="text" placeholder="Enter username" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
-  +'<div style="margin-bottom:20px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">Password</label>'
-  +'<input id="loginPwd" type="password" placeholder="Enter password" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)">'
+  +'<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">اسم المستخدم</label>'
+  +'<input id="loginUser" type="text" placeholder="أدخل اسم المستخدم" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
+  +'<div style="margin-bottom:20px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">كلمة المرور</label>'
+  +'<input id="loginPwd" type="password" placeholder="أدخل كلمة المرور" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)">'
   +'</div>'
-  +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">Invalid username or password</div>'
-  +'<button id="btnLogin" style="width:100%;padding:11px;background:var(--tx);color:var(--sf);border:none;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer">Sign In</button>'
-  +'<div style="margin-top:16px;font-size:11px;color:var(--t3);text-align:center">'+'Default: admin / admin123</div>'+'<div style="margin-top:8px;font-size:11px;text-align:center">'+'<a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">Forgot password? Reset admin</a>'+'</div>'
+  +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">اسم المستخدم أو كلمة المرور غير صحيحة</div>'
+  +'<button id="btnLogin" style="width:100%;padding:11px;background:var(--tx);color:var(--sf);border:none;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer">دخول</button>'
+  +'<div style="margin-top:12px;text-align:center"><a href="#" id="btnBackToCompanies" style="font-size:12px;color:var(--t2);text-decoration:none">← العودة لقائمة الشركات</a></div>'
+  +'<div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center">الافتراضي: admin / admin123</div>'
+  +'<div style="margin-top:6px;font-size:11px;text-align:center"><a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">نسيت كلمة المرور؟ إعادة تعيين admin</a></div>'
   +'</div></div>';
 }
 function buildLayout(){
@@ -915,11 +1077,20 @@ function buildLayout(){
  return '<div class="sb"><div class="logo"><h2>'+(co.name||'AccountPro')+'</h2><p>'+(co.address||'KSA')+'</p></div>'
   +'<div class="sv" id="sv">'+(lastSave?'Saved '+lastSave.toLocaleTimeString():'Auto-save active')+'</div>'
   +'<nav>'+nav+'</nav>'
-  +'<div class="sbf" style="flex-direction:column;gap:5px"><div style="display:flex;gap:5px">'
+  +'<div class="sbf" style="flex-direction:column;gap:5px">'
+ +'<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:6px">'
+ +'<div style="overflow:hidden"><div style="font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">🏢 '+(db.company.name||'الشركة')+'</div>'
+ +'<div style="color:var(--t3);font-size:10px">'+(currentUser?currentUser.name:'')+'</div></div>'
+ +'<button class="btn bg0 bsm" id="btnSwitchCo" title="تبديل الشركة" style="flex-shrink:0;font-size:14px;padding:3px 7px">⇄</button>'
+ +'</div>'
+ +'<div style="display:flex;gap:5px">'
  +'<button class="btn bg0 bsm" id="expD" style="flex:1">'+ic('dn')+' Export</button>'
  +'<button class="btn bg0 bsm" id="impD" style="flex:1">'+ic('up_')+' Import</button>'
  +'<input type="file" id="impF" accept=".json" style="display:none"></div>'
- +'<button class="btn bg0 bsm" id="langToggle" style="width:100%;justify-content:center">'+(lang==='ar'?'\ud83c\udf10 English':'\ud83c\udf10 \u0639\u0631\u0628\u064a')+'</button></div>'
+ +'<div style="display:flex;gap:5px">'
+ +'<button class="btn bg0 bsm" id="langToggle" style="flex:1;justify-content:center">'+(lang==='ar'?'🌐 English':'🌐 عربي')+'</button>'
+ +'<button class="btn bg0 bsm bdr" id="btnLogout" style="flex:1;justify-content:center">خروج</button>'
+ +'</div></div>'
   +'</div><div class="main">'+fn()+'</div>'
   +(modal?buildModal():'');
 }
@@ -1610,26 +1781,50 @@ function mSalesInvoice(isReturn){
 
 // ── ZATCA Invoice Print ──────────────────────────────────────
 function buildZATCATLV(sellerName,vatNo,dateTime,totalWithVat,vatAmount){
+ // Correct TLV: length must be byte count of UTF-8, not char count
+ function strToBytes(str){
+  var bytes=[];
+  for(var i=0;i<str.length;i++){
+   var c=str.charCodeAt(i);
+   if(c<128){bytes.push(c);}
+   else if(c<2048){bytes.push(0xC0|(c>>6));bytes.push(0x80|(c&0x3F));}
+   else{bytes.push(0xE0|(c>>12));bytes.push(0x80|((c>>6)&0x3F));bytes.push(0x80|(c&0x3F));}
+  }
+  return bytes;
+ }
  function tlv(tag,val){
-  var enc=unescape(encodeURIComponent(val));
-  var b='';b+=String.fromCharCode(tag);b+=String.fromCharCode(enc.length);b+=enc;
-  return b;
+  var b=strToBytes(String(val));
+  var r=String.fromCharCode(tag)+String.fromCharCode(b.length);
+  for(var i=0;i<b.length;i++)r+=String.fromCharCode(b[i]);
+  return r;
  }
  var raw=tlv(1,sellerName)+tlv(2,vatNo)+tlv(3,dateTime)+tlv(4,String(totalWithVat.toFixed(2)))+tlv(5,String(vatAmount.toFixed(2)));
- return btoa(unescape(encodeURIComponent(raw)));
+ return btoa(raw);
 }
 
 // ── Global ZATCA QR Helper ───────────────────────────────────
 function makeZATCAQR(sellerName,vatNo,dateStr,total,vat){
- // Build TLV Base64 string (ZATCA standard)
+ // Correct TLV encoding per ZATCA spec — byte-accurate lengths
+ function strToBytes(str){
+  var bytes=[];
+  for(var i=0;i<str.length;i++){
+   var c=str.charCodeAt(i);
+   if(c<128){bytes.push(c);}
+   else if(c<2048){bytes.push(0xC0|(c>>6));bytes.push(0x80|(c&0x3F));}
+   else{bytes.push(0xE0|(c>>12));bytes.push(0x80|((c>>6)&0x3F));bytes.push(0x80|(c&0x3F));}
+  }
+  return bytes;
+ }
  function tlv(tag,val){
-  var enc=unescape(encodeURIComponent(String(val)));
-  return String.fromCharCode(tag)+String.fromCharCode(enc.length)+enc;
+  var b=strToBytes(String(val));
+  var r=String.fromCharCode(tag)+String.fromCharCode(b.length);
+  for(var i=0;i<b.length;i++)r+=String.fromCharCode(b[i]);
+  return r;
  }
  var raw=tlv(1,sellerName)+tlv(2,vatNo)+tlv(3,dateStr+'T00:00:00Z')+tlv(4,(+total).toFixed(2))+tlv(5,(+vat).toFixed(2));
- var b64=btoa(unescape(encodeURIComponent(raw)));
- // Generate QR image URL using QRJS
- try{return QRJS.encode(b64,2);}catch(e){try{return QRJS.encode(b64,3);}catch(e2){return '';}}
+ var b64=btoa(raw);
+ // Generate QR using QRJS wrapper
+ try{return QRJS.encode(b64);}catch(e){return '';}
 }
 
 function printSalesInvoice(siId){
@@ -1922,7 +2117,7 @@ function pInvoice(){
   // Barcode box
   h+='<div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:130px">';
   h+='<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Scan Invoice</div>';
-  h+='<div id="qrView" style="width:110px;height:110px;margin:0 auto"></div>';
+  h+='<div id="qrView" style="width:150px;height:150px;margin:0 auto"></div>';
   h+='<div style="font-size:10px;color:var(--t3);margin-top:4px">'+inv.id+'</div>';
   h+='</div>';
   h+='</div>';
@@ -3058,12 +3253,10 @@ function bindEvents(){
    +'.sig{border-top:1pt solid #222;padding-top:5pt;text-align:center;font-size:9pt;color:#555}'
    +'.no-print{display:none}@media print{.no-print{display:none}}';
 
-  // Build QR Code for print using QRCode.js
-  function makeQRDataURL(text){
-   try{return QRJS.encode(text,3);}catch(e){return '';}
-  }
-  var qrData=JSON.stringify({seller:db.company.name,vat:db.company.vatNo,inv:inv.id,date:inv.date,total:sub+tax,vatAmt:tax});
-  var bcImg=makeQRDataURL(qrData);
+  // Build QR Code for print — ZATCA compliant TLV using embedded QRJS
+  var zatcaB64=buildZATCATLV(db.company.name||'',db.company.vatNo||'',inv.date+'T00:00:00Z',sub+tax,tax);
+  var bcImg='';
+  try{bcImg=QRJS.encode(zatcaB64,4);}catch(e){bcImg='';}
   var logoHtml=db.company.logo?'<img src="'+db.company.logo+'" style="height:55pt;max-width:130pt;object-fit:contain">':'';
   var rows=inv.items.map(function(i){
    var va=i.qty*i.rate*i.vat/100;
@@ -3089,8 +3282,8 @@ function bindEvents(){
    +(inv.clientAddr?'<div class="client-info">Address: '+inv.clientAddr+'</div>':'')
    +(inv.clientPhone?'<div class="client-info">Tel: '+inv.clientPhone+'</div>':'')
    +'</div>'
-   +'<div class="box bc-box"><div class="box-title" style="text-align:center">Barcode</div>'
-   +(bcImg?'<img src="'+bcImg+'" style="width:110pt;height:110pt">':'<div style="width:110pt;height:110pt;border:1pt dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#aaa">QR Code</div>')
+   +'<div class="box bc-box"><div class="box-title" style="text-align:center">QR / Barcode</div>'
+   +(bcImg?'<img src="'+bcImg+'" style="width:130pt;height:130pt;display:block;margin:0 auto">':'<div style="width:130pt;height:130pt;border:1pt solid #ccc;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;word-break:break-all;padding:4pt">'+zatcaB64.slice(0,40)+'...</div>')
    +'<div style="font-size:8pt;color:#888;text-align:center;margin-top:3pt">'+inv.id+'</div>'
    +'</div>'
    +'</div>'
@@ -3690,6 +3883,17 @@ function bindEvents(){
  on1('permNone','click',function(){document.querySelectorAll('.permCb').forEach(function(cb){cb.checked=false;});});
  // Add logout button handler
  on1('btnLogout','click',function(){currentUser=null;clearSession();render();});
+ on1('btnSwitchCo','click',function(){
+  // Stop live listener for current company
+  if(HAS_CLOUD&&fbRef){try{fbRef.off();}catch(e){}}
+  fbRef=null;
+  currentUser=null;
+  clearSession();
+  currentCompanyId=null;
+  appState='selectCompany';
+  try{localStorage.removeItem('ap7_active_company');}catch(e){}
+  renderCompanySelect();
+ });
  on1('btnSaveSettings','click',function(){
   var name=((document.getElementById('s-name')||{}).value||'').trim();
   if(!name){alert('Company name required.');return;}
@@ -3790,29 +3994,57 @@ function jeHint(){
 }
 
 // Show loading state immediately
-document.getElementById('app').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;font-family:Arial,sans-serif;color:#68665e"><div style="text-align:center"><div style="font-size:24px;margin-bottom:10px">⏳</div><div>Loading AccountPro...</div><div style="font-size:11px;margin-top:6px;color:#9a978f">Connecting to cloud sync</div></div></div>';
+document.getElementById('app').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;font-family:Arial,sans-serif;color:#68665e"><div style="text-align:center"><div style="font-size:24px;margin-bottom:10px">⏳</div><div>Loading AccountPro...</div><div style="font-size:11px;margin-top:6px;color:#9a978f">Multi-Company Edition</div></div></div>';
 
 var skipNextRemote=false;
 document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
 document.documentElement.setAttribute('lang',lang);
-loadDB().then(function(loaded){
- db=loaded;
- render();
- // Listen for remote changes (sync across devices)
- if(HAS_CLOUD&&fbRef){
-  fbRef.on('value',function(snap){
-   var val=snap.val();
-   if(!val||!Array.isArray(val.accounts))return;
-   if(skipNextRemote){skipNextRemote=false;return;}
-   db=normalizeDB(val);
-   try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
-   restoreSession();render();
-   var el=document.getElementById('sv');
-   if(el)el.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
-  });
+
+// STARTUP: Load companies list first, then decide what to show
+loadCompaniesListCloud().then(function(list){
+ companiesList=list||[];
+
+ // Migrate old single-company data (ap7) to new multi-company format
+ (function migrateLegacy(){
+  try{
+   var old=localStorage.getItem('ap7');
+   if(!old)return;
+   var oldData=JSON.parse(old);
+   if(!oldData||!Array.isArray(oldData.accounts))return;
+   // Check if already migrated
+   if(companiesList.length>0)return;
+   // Create company from old data
+   var legacyId='co_legacy_'+Date.now().toString(36);
+   var coName=(oldData.company&&oldData.company.name)||'الشركة الرئيسية';
+   companiesList=[{id:legacyId,name:coName,address:(oldData.company&&oldData.company.address)||'',cr:(oldData.company&&oldData.company.cr)||'',vatNo:(oldData.company&&oldData.company.vatNo)||'',createdAt:today()}];
+   saveCompaniesListCloud(companiesList);
+   // Copy old data to new key
+   localStorage.setItem(lsCompanyKey(legacyId),old);
+   // Upload to Firebase if available
+   if(HAS_CLOUD&&fbRootRef){
+    fbRootRef.child('companies/'+legacyId).set(oldData).catch(function(){});
+   }
+   console.log('Migrated legacy data to company: '+legacyId);
+  }catch(e){console.warn('Legacy migration error:',e);}
+ })();
+
+ // Try to restore last active company
+ var lastCoId=getActiveCompanyId();
+ var lastCo=lastCoId&&companiesList.find(function(c){return c.id===lastCoId;});
+
+ if(lastCo&&companiesList.length>0){
+  // Auto-load last company
+  selectCompanyAndLoad(lastCo.id);
+ } else if(companiesList.length===1){
+  // Only one company → go directly
+  selectCompanyAndLoad(companiesList[0].id);
+ } else {
+  // Show company selection screen
+  appState='selectCompany';
+  renderCompanySelect();
  }
 }).catch(function(e){
- document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load data: '+e.message+'</div>';
+ document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load: '+e.message+'</div>';
 });
 })();
 
