@@ -11,17 +11,17 @@
 --rd:#b91c1c;--rdb:#fff1f0;--pu:#6d28d9;--pub:#f4f0ff;--r:7px;--rl:11px}
 body{font-family:Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:14px}
 .app{display:flex;height:100vh;overflow:hidden}
-.sb{width:240px;min-width:200px;background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
-.logo{padding:14px 16px 12px;border-bottom:1px solid var(--bd)}
-.logo h2{font-size:14px;font-weight:700}.logo p{font-size:11px;color:var(--t3);margin-top:2px}
-.sv{font-size:11px;padding:5px 16px;background:var(--gnb);color:var(--gn);border-bottom:1px solid var(--bd)}
+.sb{width:240px;min-width:200px;background:#185FA5;border-right:none;display:flex;flex-direction:column;overflow:hidden}
+.logo{padding:14px 16px 12px;border-bottom:1px solid rgba(255,255,255,0.15)}
+.logo h2{font-size:14px;font-weight:700;color:white}.logo p{font-size:11px;color:rgba(255,255,255,0.6);margin-top:2px}
+.sv{font-size:11px;padding:5px 16px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.9);border-bottom:1px solid rgba(255,255,255,0.1)}
 nav{flex:1;overflow-y:auto;padding:6px 0}
-.ns{font-size:10px;font-weight:700;color:var(--t3);padding:9px 16px 3px;text-transform:uppercase;letter-spacing:.07em}
-.ni{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:var(--t2);border-left:3px solid transparent;transition:background .12s;white-space:nowrap;overflow:hidden}
-.ni:hover{background:var(--bg);color:var(--tx)}.ni.active{background:var(--bg);color:var(--tx);font-weight:600;border-left-color:var(--tx)}
-.ni svg{width:15px;height:15px;flex-shrink:0;opacity:.75}
+.ns{font-size:10px;font-weight:700;color:rgba(255,255,255,0.45);padding:9px 16px 3px;text-transform:uppercase;letter-spacing:.07em}
+.ni{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.8);border-left:3px solid transparent;transition:background .12s;white-space:nowrap;overflow:hidden}
+.ni:hover{background:rgba(255,255,255,0.12);color:white}.ni.active{background:rgba(255,255,255,0.18);color:white;font-weight:600;border-left-color:white}
+.ni svg{width:15px;height:15px;flex-shrink:0;opacity:.85}
 .btn svg{width:14px;height:14px;flex-shrink:0;vertical-align:middle}
-.sbf{padding:10px 14px;border-top:1px solid var(--bd);display:flex;gap:6px}
+.sbf{padding:10px 14px;border-top:1px solid rgba(255,255,255,0.15);display:flex;gap:6px}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .tb{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--bd);background:var(--sf);gap:10px;flex-wrap:wrap}
 .tb h1{font-size:15px;font-weight:700}.ta{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -78,7 +78,7 @@ html[dir="ltr"] th{text-align:left}
 html[dir="ltr"] .sbf{padding:8px 10px;gap:4px}
 html[dir="ltr"] .sbf .btn{font-size:11px;padding:5px 8px}
 html[dir="ltr"] .logo h2{font-size:13px}
-html[dir="ltr"] .ni.active{border-left-color:transparent;border-right:3px solid var(--tx);padding-right:11px}
+html[dir="ltr"] .ni.active{border-left-color:transparent;border-right:3px solid white;padding-right:11px}
 html[dir="ltr"] .ind{padding-left:0;padding-right:14px}
 .modal .tw{overflow:visible}
 .modal table{overflow:visible}
@@ -230,7 +230,7 @@ function loadDB(){
 }
 
 // STATE
-var view='coa',modal=null,invView=null,cusView=null,supView=null;
+var view='dashboard',modal=null,invView=null,cusView=null,supView=null;
 var fAcc='',fFrom='',fTo='',stimer=null,lastSave=null;
 var tAcc={},tJE={},tInv={},tCus={},tSup={},tRcpt={},tPymt={},tCC={},tUser={};
 var tFAEdit={},tFA=null,tLocEdit={};
@@ -831,6 +831,7 @@ function buildLogin(){
 function buildLayout(){
  var co=db.company;
  var navData=[
+  {k:'dashboard',i:'home',l:lang==='ar'?'لوحة التحكم':'Dashboard'},
   {sec:tr('sec_general')},
   {k:'coa',i:'list',l:tr('nav_coa')},
   {sec:tr('sec_financial')},
@@ -870,17 +871,34 @@ function buildLayout(){
   if(n.sec)nav+='<div class="ns">'+n.sec+'</div>';
   else nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+n.k+'">'+ic(n.i)+' '+n.l+'</div>';
  });
- var pages={coa:pCOA,items:pItems,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
+ var pages={dashboard:pDashboard,coa:pCOA,items:pItems,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
  if(view==='fixedassets'&&tFA){return pAssetDetail();}
- var fn=pages[view]||pCOA;
- return '<div class="sb"><div class="logo"><h2>'+(co.name||'AccountPro')+'</h2><p>'+(co.address||'KSA')+'</p></div>'
+ var fn=pages[view]||pDashboard;
+ var isAr=lang==='ar';
+ var sbLogoSVG='<svg width="32" height="32" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="10" fill="rgba(255,255,255,0.2)"/><rect x="10" y="14" width="28" height="4" rx="2" fill="white"/><rect x="10" y="22" width="22" height="4" rx="2" fill="rgba(255,255,255,0.7)"/><rect x="10" y="30" width="16" height="4" rx="2" fill="rgba(255,255,255,0.5)"/><polyline points="34,32 34,18" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/><polyline points="30,22 34,18 38,22" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ var sbBrand=isAr?'<span style="font-weight:800">\u0623\u0643\u0627\u0648\u0646\u062a</span><span style="font-weight:300;opacity:.8">\u0628\u0631\u0648</span>':'<span style="font-weight:800">Account</span><span style="font-weight:300;opacity:.8">Pro</span>';
+ return '<div class="sb"><div class="logo">'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+sbLogoSVG
+  +'<div style="font-size:16px;color:white;line-height:1">'+sbBrand+'</div></div>'
+  +'<div style="font-size:11px;color:rgba(255,255,255,0.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(co.name||'AccountPro')+'</div>'
+  +'<div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:1px">'+(co.address||'')+'</div>'
+  +'</div>'
   +'<div class="sv" id="sv">'+(lastSave?'Saved '+lastSave.toLocaleTimeString():'Auto-save active')+'</div>'
   +'<nav>'+nav+'</nav>'
-  +'<div class="sbf" style="flex-direction:column;gap:5px"><div style="display:flex;gap:5px">'
- +'<button class="btn bg0 bsm" id="expD" style="flex:1">'+ic('dn')+' Export</button>'
- +'<button class="btn bg0 bsm" id="impD" style="flex:1">'+ic('up_')+' Import</button>'
+  +'<div class="sbf" style="flex-direction:column;gap:5px">'
+ +'<div style="background:rgba(255,255,255,0.1);border-radius:var(--r);padding:6px 10px;font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px">'
+ +'<div style="overflow:hidden"><div style="font-weight:700;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">&#127970; '+(db.company.name||'')+'</div>'
+ +'<div style="color:rgba(255,255,255,0.55);font-size:10px">'+(currentUser?currentUser.name:'')+'</div></div>'
+ +'<button class="btn bsm" id="btnSwitchCo" title="تبديل الشركة" style="flex-shrink:0;font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:white">⇄</button>'
+ +'</div>'
+ +'<div style="display:flex;gap:5px">'
+ +'<button class="btn bsm" id="expD" style="flex:1;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+ic('dn')+' Export</button>'
+ +'<button class="btn bsm" id="impD" style="flex:1;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+ic('up_')+' Import</button>'
  +'<input type="file" id="impF" accept=".json" style="display:none"></div>'
- +'<button class="btn bg0 bsm" id="langToggle" style="width:100%;justify-content:center">'+(lang==='ar'?'\ud83c\udf10 English':'\ud83c\udf10 \u0639\u0631\u0628\u064a')+'</button></div>'
+ +'<div style="display:flex;gap:5px">'
+ +'<button class="btn bsm" id="langToggle" style="flex:1;justify-content:center;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+(lang==='ar'?'🌐 English':'🌐 عربي')+'</button>'
+ +'<button class="btn bsm" id="btnLogout" style="flex:1;justify-content:center;background:rgba(220,38,38,0.3);border-color:rgba(220,38,38,0.5);color:white">'+(lang==='ar'?'خروج':'Logout')+'</button>'
+ +'</div></div>'
   +'</div><div class="main">'+fn()+'</div>'
   +(modal?buildModal():'');
 }
@@ -1787,6 +1805,105 @@ function printPurchaseInvoice(piId){
  if(w){w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+pi.id+'</title><style>'+css+'</style></head><body>'+body+'</body></html>');w.document.close();}
 }
 
+// ── DASHBOARD ────────────────────────────────────────────────
+function pDashboard(){
+ var isAr=lang==='ar';
+ var totalJE=db.journals.length;
+ var totalInv=db.invoices.length;
+ var totalCus=db.customers.length;
+ var totalSup=db.suppliers.length;
+ var totalRcpt=(db.receipts||[]).length;
+ var totalPay=(db.payments||[]).length;
+ var invPaid=db.invoices.filter(function(i){return i.paid;}).length;
+ var invPending=db.invoices.filter(function(i){return !i.paid;}).length;
+ // Calculate totals from receipts
+ var totalRcptAmt=(db.receipts||[]).reduce(function(s,r){return s+(r.amount||0);},0);
+ var totalPayAmt=(db.payments||[]).reduce(function(s,r){return s+(r.amount||0);},0);
+ // Asset balance
+ var assetBal=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+(a.bal||0);},0);
+ var liabBal=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+(a.bal||0);},0);
+
+ var cards=[
+  {label:isAr?'القيود اليومية':'Journal Entries', val:totalJE, icon:'📒', color:'#185FA5', bg:'#E6F1FB'},
+  {label:isAr?'الفواتير':'Invoices', val:totalInv, icon:'🧾', color:'#0F6E56', bg:'#E1F5EE'},
+  {label:isAr?'العملاء':'Customers', val:totalCus, icon:'👥', color:'#B45309', bg:'#FFF7E0'},
+  {label:isAr?'الموردون':'Suppliers', val:totalSup, icon:'🚚', color:'#6D28D9', bg:'#F4F0FF'},
+  {label:isAr?'سندات القبض':'Receipts', val:totalRcpt, icon:'💰', color:'#0F6E56', bg:'#E1F5EE'},
+  {label:isAr?'سندات الصرف':'Payments', val:totalPay, icon:'💸', color:'#B91C1C', bg:'#FFF1F0'},
+  {label:isAr?'فواتير مدفوعة':'Paid Invoices', val:invPaid, icon:'✅', color:'#185FA5', bg:'#E6F1FB'},
+  {label:isAr?'فواتير معلقة':'Pending Invoices', val:invPending, icon:'⏳', color:'#B45309', bg:'#FFF7E0'},
+ ];
+
+ var cardsHtml=cards.map(function(c){
+  return '<div style="background:'+c.bg+';border-radius:12px;padding:18px 20px;display:flex;align-items:center;gap:16px;border:1px solid '+c.color+'22">'
+   +'<div style="font-size:28px">'+c.icon+'</div>'
+   +'<div><div style="font-size:11px;color:'+c.color+';font-weight:600;margin-bottom:4px">'+c.label+'</div>'
+   +'<div style="font-size:28px;font-weight:800;color:'+c.color+'">'+c.val+'</div>'
+   +'</div></div>';
+ }).join('');
+
+ // Recent journals
+ var recentJE=db.journals.slice(-5).reverse().map(function(j){
+  return '<tr>'
+   +'<td style="padding:8px 12px;font-size:12px;color:var(--tx)">'+j.id+'</td>'
+   +'<td style="padding:8px 12px;font-size:12px;color:var(--t2)">'+j.date+'</td>'
+   +'<td style="padding:8px 12px;font-size:12px;color:var(--tx)">'+j.desc+'</td>'
+   +'<td style="padding:8px 12px;font-size:12px;text-align:center"><span style="background:#E6F1FB;color:#185FA5;padding:2px 8px;border-radius:99px;font-size:11px">'+(j.lines?j.lines.length:0)+' '+( isAr?'سطر':'lines')+'</span></td>'
+   +'</tr>';
+ }).join('');
+
+ // Recent invoices
+ var recentInv=db.invoices.slice(-5).reverse().map(function(i){
+  var sub=i.items?i.items.reduce(function(s,x){return s+x.qty*x.rate;},0):0;
+  return '<tr>'
+   +'<td style="padding:8px 12px;font-size:12px;color:var(--tx)">'+i.id+'</td>'
+   +'<td style="padding:8px 12px;font-size:12px;color:var(--t2)">'+i.date+'</td>'
+   +'<td style="padding:8px 12px;font-size:12px;color:var(--tx)">'+i.client+'</td>'
+   +'<td style="padding:8px 12px;font-size:12px;font-weight:600;color:#185FA5">'+N(sub)+'</td>'
+   +'<td style="padding:8px 12px"><span style="background:'+(i.paid?'#E1F5EE':'#FFF7E0')+';color:'+(i.paid?'#0F6E56':'#B45309')+';padding:2px 8px;border-radius:99px;font-size:11px">'+(i.paid?(isAr?'مدفوع':'Paid'):(isAr?'معلق':'Pending'))+'</span></td>'
+   +'</tr>';
+ }).join('');
+
+ var h='<div class="pg">';
+ // Welcome bar
+ h+='<div style="background:linear-gradient(135deg,#185FA5 0%,#378ADD 100%);border-radius:12px;padding:20px 24px;color:white;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">'
+  +'<div>'
+  +'<div style="font-size:18px;font-weight:700">'+(isAr?'مرحباً، ':'Welcome, ')+(currentUser?currentUser.name:'')+'</div>'
+  +'<div style="font-size:13px;opacity:.8;margin-top:4px">'+db.company.name+' &mdash; '+today()+'</div>'
+  +'</div>'
+  +'<div style="font-size:36px;opacity:.3">&#x1F4CA;</div>'
+  +'</div>';
+ // Cards grid
+ h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px">'+cardsHtml+'</div>';
+ // Two panels
+ h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+ // Recent JE
+ h+='<div class="card">'
+  +'<div style="font-weight:700;font-size:13px;padding:12px 16px;border-bottom:1px solid var(--bd);color:#185FA5">📒 '+(isAr?'آخر القيود اليومية':'Recent Journal Entries')+'</div>'
+  +(recentJE?'<table style="width:100%"><thead><tr>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'رقم':'No')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'التاريخ':'Date')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'الوصف':'Description')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:center">'+(isAr?'السطور':'Lines')+'</th>'
+   +'</tr></thead><tbody>'+recentJE+'</tbody></table>'
+   :'<div style="padding:30px;text-align:center;color:var(--t3);font-size:13px">'+(isAr?'لا توجد قيود بعد':'No entries yet')+'</div>')
+  +'</div>';
+ // Recent Invoices
+ h+='<div class="card">'
+  +'<div style="font-weight:700;font-size:13px;padding:12px 16px;border-bottom:1px solid var(--bd);color:#0F6E56">🧾 '+(isAr?'آخر الفواتير':'Recent Invoices')+'</div>'
+  +(recentInv?'<table style="width:100%"><thead><tr>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'رقم':'No')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'التاريخ':'Date')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'العميل':'Client')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'المبلغ':'Amount')+'</th>'
+   +'<th style="padding:6px 12px;font-size:11px;color:var(--t2);font-weight:600;text-align:right">'+(isAr?'الحالة':'Status')+'</th>'
+   +'</tr></thead><tbody>'+recentInv+'</tbody></table>'
+   :'<div style="padding:30px;text-align:center;color:var(--t3);font-size:13px">'+(isAr?'لا توجد فواتير بعد':'No invoices yet')+'</div>')
+  +'</div>';
+ h+='</div></div>';
+ return h;
+}
+
 function pCOA(){
  var types=['Asset','Liability','Equity','Revenue','Expense'];
  var lm={};
@@ -1967,16 +2084,29 @@ function pPayment(){return pVoucher(db.payments,false);}
 function accBalRange(accId,from2,to2){
  var a=db.accounts.find(function(x){return x.id===accId;});
  if(!a)return 0;
- if(!from2&&!to2)return a.bal;
- var bal=0;
+ // Always calculate from journal entries + opening balance
+ var bal=a.bal||0; // opening balance
  db.journals.forEach(function(je){
   if(from2&&je.date<from2)return;
   if(to2&&je.date>to2)return;
-  je.lines.forEach(function(l){
+  (je.lines||[]).forEach(function(l){
    if(l.acc!==accId)return;
-   if(a.normal==='Debit')bal+=(l.dr||0)-(l.cr||0);
-   else bal+=(l.cr||0)-(l.dr||0);
+   if(a.normal==='Debit')bal+=(Number(l.dr)||0)-(Number(l.cr)||0);
+   else bal+=(Number(l.cr)||0)-(Number(l.dr)||0);
   });
+ });
+ // Also include receipts and payments
+ (db.receipts||[]).forEach(function(r){
+  if(from2&&r.date<from2)return;
+  if(to2&&r.date>to2)return;
+  if(r.accTo===accId){if(a.normal==='Debit')bal+=(Number(r.amount)||0);else bal-=(Number(r.amount)||0);}
+  if(r.accFrom===accId){if(a.normal==='Debit')bal-=(Number(r.amount)||0);else bal+=(Number(r.amount)||0);}
+ });
+ (db.payments||[]).forEach(function(r){
+  if(from2&&r.date<from2)return;
+  if(to2&&r.date>to2)return;
+  if(r.accTo===accId){if(a.normal==='Debit')bal+=(Number(r.amount)||0);else bal-=(Number(r.amount)||0);}
+  if(r.accFrom===accId){if(a.normal==='Debit')bal-=(Number(r.amount)||0);else bal+=(Number(r.amount)||0);}
  });
  return bal;
 }
@@ -2088,10 +2218,11 @@ function pTrial(){
 }
 
 function incData(){
- var rev=db.accounts.filter(function(a){return a.type==='Revenue'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0);
- var exp=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0);
+ var f=rptFrom,t=rptTo;
+ var rev=db.accounts.filter(function(a){return a.type==='Revenue'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0);
+ var exp=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0);
  var cogs=db.accounts.find(function(a){return a.id==='5000';});
- var ca=cogs?(cogs.isMain?mainBal('5000'):cogs.bal):0;
+ var ca=cogs?(cogs.isMain?mainBalRange('5000',f,t):accBalRange('5000',f,t)):0;
  return{rev:rev,exp:exp,ca:ca,gp:rev-ca,ni:rev-exp,oe:exp-ca};
 }
 function pIncome(){
@@ -2102,43 +2233,57 @@ function pIncome(){
  h+='<div class="mets"><div class="met"><div class="mlab">Revenue</div><div class="mv">'+fmt(d.rev)+'</div></div><div class="met"><div class="mlab">Gross Profit</div><div class="mv '+(d.gp>=0?'pos':'neg')+'">'+fmt(d.gp)+'</div></div><div class="met"><div class="mlab">Net Income</div><div class="mv '+(d.ni>=0?'pos':'neg')+'">'+fmt(d.ni)+'</div></div></div>';
  h+='<div class="card" style="max-width:560px"><div class="rh">Revenue</div>';
  db.accounts.filter(function(a){return a.type==='Revenue'&&a.isMain;}).forEach(function(m){
-  var subs=db.accounts.filter(function(s){return s.pid===m.id;}),bal=subs.reduce(function(s,x){return s+x.bal;},0);
-  h+='<div class="rr"><strong>'+m.name+'</strong><span class="mn">'+N(bal)+'</span></div>';
-  subs.forEach(function(s){h+='<div class="rr ind"><span style="color:var(--t2)">'+s.name+'</span><span class="mn">'+N(s.bal)+'</span></div>';});
+  var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+  var bal=subs.reduce(function(s,x){return s+accBalRange(x.id,f,t);},0);
+  if(!subs.length)bal=accBalRange(m.id,f,t);
+  h+='<div class="rr"><strong>'+accN(m)+'</strong><span class="mn">'+N(bal)+'</span></div>';
+  subs.forEach(function(s){var sb=accBalRange(s.id,f,t);h+='<div class="rr ind"><span style="color:var(--t2)">'+accN(s)+'</span><span class="mn">'+N(sb)+'</span></div>';});
  });
  h+='<div class="rt"><span>Total Revenue</span><span class="mn">'+N(d.rev)+'</span></div>';
  h+='<div class="rh">COGS</div><div class="rr ind"><span>Cost of Goods Sold</span><span class="mn">('+N(d.ca)+')</span></div>';
  h+='<div class="rt"><span>Gross Profit</span><span class="mn">'+N(d.gp)+'</span></div>';
  h+='<div class="rh">Operating Expenses</div>';
  db.accounts.filter(function(a){return a.type==='Expense'&&a.isMain&&a.id!=='5000';}).forEach(function(m){
-  var subs=db.accounts.filter(function(s){return s.pid===m.id;}),bal=subs.reduce(function(s,x){return s+x.bal;},0);
-  h+='<div class="rr"><strong>'+m.name+'</strong><span class="mn">('+N(bal)+')</span></div>';
-  subs.forEach(function(s){h+='<div class="rr ind"><span style="color:var(--t2)">'+s.name+'</span><span class="mn">('+N(s.bal)+')</span></div>';});
+  var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+  var bal=subs.reduce(function(s,x){return s+accBalRange(x.id,f,t);},0);
+  if(!subs.length)bal=accBalRange(m.id,f,t);
+  h+='<div class="rr"><strong>'+accN(m)+'</strong><span class="mn">('+N(bal)+')</span></div>';
+  subs.forEach(function(s){var sb=accBalRange(s.id,f,t);h+='<div class="rr ind"><span style="color:var(--t2)">'+accN(s)+'</span><span class="mn">('+N(sb)+')</span></div>';});
  });
  h+='<div class="rt"><span>Total Op. Expenses</span><span class="mn">('+N(d.oe)+')</span></div>';
  h+='<div class="rnet"><span>Net Income / (Loss)</span><span class="mn" style="color:'+(d.ni>=0?'var(--gn)':'var(--rd)')+'">'+N(d.ni)+'</span></div></div></div>';
  return h;
 }
 
-function bsRows(mains){var h='';mains.forEach(function(m){var subs=db.accounts.filter(function(s){return s.pid===m.id;}),bal=subs.reduce(function(s,x){return s+x.bal;},0);h+='<div class="rr"><strong>'+m.name+'</strong><span class="mn">'+N(bal)+'</span></div>';subs.forEach(function(s){h+='<div class="rr ind"><span style="color:var(--t2)">'+s.name+'</span><span class="mn">'+N(s.bal)+'</span></div>';});});return h;}
+function bsRows(mains,f,t){
+ var h='';
+ mains.forEach(function(m){
+  var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+  var bal=subs.length?subs.reduce(function(s,x){return s+accBalRange(x.id,f,t);},0):accBalRange(m.id,f,t);
+  h+='<div class="rr"><strong>'+accN(m)+'</strong><span class="mn">'+N(bal)+'</span></div>';
+  subs.forEach(function(s){var sb=accBalRange(s.id,f,t);h+='<div class="rr ind"><span style="color:var(--t2)">'+accN(s)+'</span><span class="mn">'+N(sb)+'</span></div>';});
+ });
+ return h;
+}
 function pBalance(){
- var tA=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0);
- var tL=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0);
- var rev=db.accounts.filter(function(a){return a.type==='Revenue'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0);
- var xp=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0);
- var tEq=db.accounts.filter(function(a){return a.type==='Equity'&&!a.isMain;}).reduce(function(s,a){return s+a.bal;},0)+(rev-xp);
+ var f=rptFrom,t=rptTo;
+ var tA=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0);
+ var tL=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0);
+ var rev=db.accounts.filter(function(a){return a.type==='Revenue'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0);
+ var xp=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0);
+ var tEq=db.accounts.filter(function(a){return a.type==='Equity'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t);},0)+(rev-xp);
  var h=tb(tr('nav_balance'),'<button class="btn" data-action="xlsBalance">'+ic('dn')+' Excel</button><button class="btn" data-action="pdfBalance">'+ic('prt')+' PDF</button>');
  h+='<div class="pg">'+buildFilterBar('balance');
  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:840px">';
  h+='<div class="card"><div class="ct">Assets</div>';
- h+=bsRows(db.accounts.filter(function(a){return a.type==='Asset'&&a.isMain;}));
+ h+=bsRows(db.accounts.filter(function(a){return a.type==='Asset'&&a.isMain;}),f,t);
  h+='<div class="rt"><span>Total Assets</span><span class="mn">'+N(tA)+'</span></div></div>';
  h+='<div class="card"><div class="ct">Liabilities &amp; Equity</div>';
  h+='<div class="rh" style="margin-top:0">Liabilities</div>';
- h+=bsRows(db.accounts.filter(function(a){return a.type==='Liability'&&a.isMain;}));
+ h+=bsRows(db.accounts.filter(function(a){return a.type==='Liability'&&a.isMain;}),f,t);
  h+='<div class="rt"><span>Total Liabilities</span><span class="mn">'+N(tL)+'</span></div>';
  h+='<div class="rh">Equity</div>';
- h+=bsRows(db.accounts.filter(function(a){return a.type==='Equity'&&a.isMain;}));
+ h+=bsRows(db.accounts.filter(function(a){return a.type==='Equity'&&a.isMain;}),f,t);
  h+='<div class="rr ind"><span style="color:var(--t2)">Net Income</span><span class="mn">'+N(rev-xp)+'</span></div>';
  h+='<div class="rt"><span>Total Equity</span><span class="mn">'+N(tEq)+'</span></div>';
  h+='<div class="rnet"><span>Total L&amp;E</span><span class="mn">'+N(tL+tEq)+'</span></div></div>';
