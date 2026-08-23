@@ -163,75 +163,14 @@ var DEF = {"users":[{"id":"admin","name":"Administrator","username":"admin","rol
 
 var db;
 
-// ═══════════════════════════════════════════════════════════════
-// MULTI-COMPANY SYSTEM
-// Firebase structure: accountpro-db/companies/{companyId}/...
-//                     accountpro-db/companies_list
-// localStorage:       ap7_companies_list
-//                     ap7_{companyId}
-// ═══════════════════════════════════════════════════════════════
-var currentCompanyId = null;   // active company id
-var companiesList = [];        // [{id,name,address,createdAt}]
-var fbRef = null;              // Firebase ref for active company
-
 var HAS_CLOUD=false;
-var fbRootRef=null;
-
 try{
- if(typeof firebase!=='undefined' && typeof FB_CONFIG!=='undefined' && FB_CONFIG && FB_CONFIG.apiKey){
+ if(typeof firebase!=='undefined'){
   firebase.initializeApp(FB_CONFIG);
-  fbRootRef=firebase.database().ref('accountpro-db');
+  fbRef=firebase.database().ref('accountpro-db');
   HAS_CLOUD=true;
  }
-}catch(e){HAS_CLOUD=false;fbRootRef=null;}
-
-// — Companies List helpers —
-function lsCompanyKey(id){return 'ap7_'+id;}
-function lsListKey(){return 'ap7_companies_list';}
-
-function loadCompaniesList(){
- try{
-  var s=localStorage.getItem(lsListKey());
-  if(s){var d=JSON.parse(s);if(Array.isArray(d))return d;}
- }catch(e){}
- return [];
-}
-function saveCompaniesList(list){
- try{localStorage.setItem(lsListKey(),JSON.stringify(list));}catch(e){}
-}
-
-function loadCompaniesListCloud(){
- if(HAS_CLOUD&&fbRootRef){
-  return fbRootRef.child('companies_list').once('value').then(function(snap){
-   var val=snap.val();
-   if(Array.isArray(val))return val;
-   return loadCompaniesList(); // fallback to local
-  }).catch(function(){return loadCompaniesList();});
- }
- return Promise.resolve(loadCompaniesList());
-}
-function saveCompaniesListCloud(list){
- saveCompaniesList(list);
- if(HAS_CLOUD&&fbRootRef){
-  fbRootRef.child('companies_list').set(list).catch(function(){});
- }
-}
-
-function genCompanyId(){
- return 'co_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7);
-}
-
-function setActiveCompany(id){
- currentCompanyId=id;
- try{localStorage.setItem('ap7_active_company',id);}catch(e){}
- if(HAS_CLOUD&&fbRootRef){
-  fbRef=fbRootRef.child('companies/'+id);
- }
-}
-
-function getActiveCompanyId(){
- try{return localStorage.getItem('ap7_active_company')||null;}catch(e){return null;}
-}
+}catch(e){HAS_CLOUD=false;}
 
 function normalizeDB(d){
  if(!d.exp)d.exp={};
@@ -271,15 +210,13 @@ function normalizeDB(d){
  return d;
 }
 function loadFromLocalStorage(){
- if(!currentCompanyId)return normalizeDB(JSON.parse(JSON.stringify(DEF)));
  try{
-  var s=localStorage.getItem(lsCompanyKey(currentCompanyId));
+  var s=localStorage.getItem('ap7');
   if(s){var d=JSON.parse(s);if(d&&Array.isArray(d.accounts))return normalizeDB(d);}
- }catch(e){try{localStorage.removeItem(lsCompanyKey(currentCompanyId));}catch(e2){}}
+ }catch(e){try{localStorage.removeItem('ap7');}catch(e2){}}
  return normalizeDB(JSON.parse(JSON.stringify(DEF)));
 }
 function loadDB(){
- if(!currentCompanyId)return Promise.resolve(normalizeDB(JSON.parse(JSON.stringify(DEF))));
  if(HAS_CLOUD&&fbRef){
   return fbRef.once('value').then(function(snap){
    var val=snap.val();
@@ -297,8 +234,6 @@ var view='coa',modal=null,invView=null,cusView=null,supView=null;
 var fAcc='',fFrom='',fTo='',stimer=null,lastSave=null;
 var tAcc={},tJE={},tInv={},tCus={},tSup={},tRcpt={},tPymt={},tCC={},tUser={};
 var tFAEdit={},tFA=null,tLocEdit={};
-var tCompany={};   // for company add/edit modal
-var appState='selectCompany'; // 'selectCompany' | 'app'
 var currentUser=null;
 var rptFrom='',rptTo='',rptLevel='all'; // report filters
 
@@ -310,7 +245,7 @@ function vatR(){return Number(db.company.vatRate)||15;}
 function today(){return new Date().toISOString().slice(0,10);}
 function accN(a){return (lang==='ar'&&a&&a.nameAr)?a.nameAr:a?a.name:'';}
 function aName(id){var a=db.accounts.find(function(x){return x.id===id;});if(!a)return id;return (lang==='ar'&&a.nameAr)?a.nameAr:a.name;}
-function leafAccs(){return db.accounts.filter(function(a){if(a.isMain)return !db.accounts.some(function(s){return s.pid===a.id;});return true;});}
+function leafAccs(){return db.accounts.filter(function(a){return !db.accounts.some(function(s){return s.pid===a.id;});});}
 function mainBal(id){return db.accounts.filter(function(s){return s.pid===id;}).reduce(function(s,x){return s+x.bal;},0);}
 function nextJE(){return 'JE'+String(db.journals.length+1).padStart(3,'0');}
 function nextINV(){return 'INV-'+String(db.invoices.length+1).padStart(3,'0');}
@@ -450,7 +385,7 @@ function save(){
  stimer=setTimeout(function(){
   var el=document.getElementById('sv');
   // Always save locally as instant backup
-  try{localStorage.setItem(lsCompanyKey(currentCompanyId),JSON.stringify(db));}catch(e){}
+  try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
   if(HAS_CLOUD&&fbRef){
    if(el)el.textContent='Saving to cloud...';
    skipNextRemote=true;
@@ -514,102 +449,147 @@ function printHTML(title,body){
 
 
 
-// ══════════════════════════════════════════════════════
-// QR Code Generator — Fully Embedded, works offline
-// ══════════════════════════════════════════════════════
+// QR Code Generator - Correct Reed-Solomon Implementation
+// Supports Version 1-5, Error Correction Level M
 var QRJS=(function(){
 "use strict";
-var QR8bitByte=function(d){this.mode=4;this.data=d;this.parsedData=[];var a=[];for(var i=0;i<d.length;i++){var c=d.charCodeAt(i);if(c<128){a.push(c);}else if(c<2048){a.push(0xC0|(c>>6));a.push(0x80|(c&0x3F));}else{a.push(0xE0|(c>>12));a.push(0x80|((c>>6)&0x3F));a.push(0x80|(c&0x3F));}}this.parsedData=a;};
-QR8bitByte.prototype={getLength:function(){return this.parsedData.length;},write:function(buf){for(var i=0;i<this.parsedData.length;i++){buf.put(this.parsedData[i],8);}}};
-var QRPolynomial=function(num,shift){var offset=0;while(offset<num.length&&num[offset]==0)offset++;this.num=new Array(num.length-offset+shift);for(var i=0;i<num.length-offset;i++)this.num[i]=num[i+offset];};
-QRPolynomial.prototype={get:function(i){return this.num[i];},getLength:function(){return this.num.length;},multiply:function(e){var num=new Array(this.getLength()+e.getLength()-1);for(var i=0;i<num.length;i++)num[i]=0;for(var i=0;i<this.getLength();i++)for(var j=0;j<e.getLength();j++)num[i+j]^=QRMath.gexp(QRMath.glog(this.get(i))+QRMath.glog(e.get(j)));return new QRPolynomial(num,0);},mod:function(e){if(this.getLength()-e.getLength()<0)return this;var ratio=QRMath.glog(this.get(0))-QRMath.glog(e.get(0));var num=new Array(this.getLength());for(var i=0;i<this.getLength();i++)num[i]=this.get(i);for(var i=0;i<e.getLength();i++)num[i]^=QRMath.gexp(QRMath.glog(e.get(i))+ratio);return new QRPolynomial(num,0).mod(e);}};
-var QRMath={glog:function(n){if(n<1)throw new Error("glog("+n+")");return QRMath.LOG_TABLE[n];},gexp:function(n){while(n<0)n+=255;while(n>=256)n-=255;return QRMath.EXP_TABLE[n];},EXP_TABLE:new Array(256),LOG_TABLE:new Array(256)};
-for(var i=0;i<8;i++)QRMath.EXP_TABLE[i]=1<<i;
-for(var i=8;i<256;i++)QRMath.EXP_TABLE[i]=QRMath.EXP_TABLE[i-4]^QRMath.EXP_TABLE[i-5]^QRMath.EXP_TABLE[i-6]^QRMath.EXP_TABLE[i-8];
-for(var i=0;i<255;i++)QRMath.LOG_TABLE[QRMath.EXP_TABLE[i]]=i;
-var QRRSBlock=function(tc,dc){this.totalCount=tc;this.dataCount=dc;};
-QRRSBlock.RS_BLOCK_TABLE=[[1,26,19,0,0,0],[1,44,34,0,0,0],[1,70,55,0,0,0],[2,50,40,0,0,0],[2,67,53,0,0,0],[2,86,69,0,0,0],[4,101,80,0,0,0],[4,122,98,0,0,0],[2,86,67,2,98,79],[2,90,69,2,102,83]];
-QRRSBlock.getRSBlocks=function(tn,el){var t=QRRSBlock.RS_BLOCK_TABLE[tn-1];if(!t)throw new Error("bad rs block @ tn:"+tn);var list=[];var len=t.length/3;for(var i=0;i<len;i++){var cnt=t[i*3+0];var tc=t[i*3+1];var dc=t[i*3+2];for(var j=0;j<cnt;j++)list.push(new QRRSBlock(tc,dc));}return list;};
-var QRBitBuffer=function(){this.buffer=[];this.length=0;};
-QRBitBuffer.prototype={get:function(i){return((this.buffer[Math.floor(i/8)]>>>(7-i%8))&1)==1;},put:function(num,len){for(var i=0;i<len;i++)this.putBit(((num>>>(len-i-1))&1)==1);},getLengthInBits:function(){return this.length;},putBit:function(bit){var bi=Math.floor(this.length/8);if(this.buffer.length<=bi)this.buffer.push(0);if(bit)this.buffer[bi]|=(0x80>>>(this.length%8));this.length++;}};
-var QRUtil={G15:(1<<10)|(1<<8)|(1<<5)|(1<<4)|(1<<2)|(1<<1)|(1<<0),G15_MASK:(1<<14)|(1<<12)|(1<<10)|(1<<4)|(1<<1),
-getBCHTypeInfo:function(d){var x=d<<10;while(QRUtil.getBCHDigit(x)-QRUtil.getBCHDigit(QRUtil.G15)>=0)x^=(QRUtil.G15<<(QRUtil.getBCHDigit(x)-QRUtil.getBCHDigit(QRUtil.G15)));return((d<<10)|x)^QRUtil.G15_MASK;},
-getBCHDigit:function(d){var n=0;while(d!=0){n++;d>>>=1;}return n;},
-getMask:function(mp,i,j){switch(mp){case 0:return(i+j)%2==0;case 1:return i%2==0;case 2:return j%3==0;case 3:return(i+j)%3==0;case 4:return(Math.floor(i/2)+Math.floor(j/3))%2==0;case 5:return(i*j)%2+(i*j)%3==0;case 6:return((i*j)%2+(i*j)%3)%2==0;case 7:return((i+j)%2+(i*j)%3)%2==0;}return false;},
-getErrorCorrectPolynomial:function(n){var a=new QRPolynomial([1],0);for(var i=0;i<n;i++)a=a.multiply(new QRPolynomial([1,QRMath.gexp(i)],0));return a;},
-getLostPoint:function(qr){var mc=qr.getModuleCount();var lp=0;for(var r=0;r<mc;r++){for(var c=0;c<mc;c++){var sc=0;var dark=qr.isDark(r,c);for(var dr=-1;dr<=1;dr++)for(var dc=-1;dc<=1;dc++){if(r+dr<0||mc<=r+dr||c+dc<0||mc<=c+dc||dr==0&&dc==0)continue;if(dark==qr.isDark(r+dr,c+dc))sc++;}if(sc>5)lp+=(3+sc-5);}}return lp;}};
-var QRCodeModel=function(tn,el){this.typeNumber=tn;this.errorCorrectLevel=el;this.modules=null;this.moduleCount=0;this.dataCache=null;this.dataList=[];};
-QRCodeModel.prototype={
-addData:function(d){this.dataList.push(new QR8bitByte(d));this.dataCache=null;},
-isDark:function(r,c){return this.modules[r][c];},
-getModuleCount:function(){return this.moduleCount;},
-make:function(){this.makeImpl(false,this.getBestMaskPattern());},
-makeImpl:function(test,mp){
- this.moduleCount=this.typeNumber*4+17;
- this.modules=[];
- for(var r=0;r<this.moduleCount;r++){this.modules[r]=[];for(var c=0;c<this.moduleCount;c++)this.modules[r][c]=null;}
- this.setupPositionProbePattern(0,0);this.setupPositionProbePattern(this.moduleCount-7,0);this.setupPositionProbePattern(0,this.moduleCount-7);
- this.setupTimingPattern();this.setupTypeInfo(test,mp);
- if(this.dataCache==null)this.dataCache=QRCodeModel.createData(this.typeNumber,this.errorCorrectLevel,this.dataList);
- this.mapData(this.dataCache,mp);
-},
-setupPositionProbePattern:function(r,c){for(var dr=-1;dr<=7;dr++){if(r+dr<=-1||this.moduleCount<=r+dr)continue;for(var dc=-1;dc<=7;dc++){if(c+dc<=-1||this.moduleCount<=c+dc)continue;this.modules[r+dr][c+dc]=(dr==0||dr==6||dc==0||dc==6||(dr>=2&&dr<=4&&dc>=2&&dc<=4));}}},
-getBestMaskPattern:function(){var minLost=0;var pat=0;for(var i=0;i<8;i++){this.makeImpl(true,i);var lp=QRUtil.getLostPoint(this);if(i==0||minLost>lp){minLost=lp;pat=i;}}return pat;},
-setupTimingPattern:function(){for(var r=8;r<this.moduleCount-8;r++){if(this.modules[r][6]!=null)continue;this.modules[r][6]=(r%2==0);}for(var c=8;c<this.moduleCount-8;c++){if(this.modules[6][c]!=null)continue;this.modules[6][c]=(c%2==0);}},
-setupTypeInfo:function(test,mp){var data=(1<<3)|mp;var bits=QRUtil.getBCHTypeInfo(data);for(var i=0;i<15;i++){var mod=(!test&&((bits>>i)&1)==1);if(i<6)this.modules[i][8]=mod;else if(i<8)this.modules[i+1][8]=mod;else this.modules[this.moduleCount-15+i][8]=mod;}for(var i=0;i<15;i++){var mod=(!test&&((bits>>i)&1)==1);if(i<8)this.modules[8][this.moduleCount-i-1]=mod;else if(i<9)this.modules[8][15-i-1+1]=mod;else this.modules[8][15-i-1]=mod;}this.modules[this.moduleCount-8][8]=!test;},
-mapData:function(data,mp){var inc=-1;var row=this.moduleCount-1;var bitIdx=7;var byteIdx=0;for(var col=this.moduleCount-1;col>0;col-=2){if(col==6)col--;while(true){for(var c=0;c<2;c++){if(this.modules[row][col-c]==null){var dark=false;if(byteIdx<data.length)dark=((data[byteIdx]>>>bitIdx)&1)==1;var mask=QRUtil.getMask(mp,row,col-c);if(mask)dark=!dark;this.modules[row][col-c]=dark;bitIdx--;if(bitIdx==-1){byteIdx++;bitIdx=7;}}}row+=inc;if(row<0||this.moduleCount<=row){row-=inc;inc=-inc;break;}}}}
+// QR Code generator supporting Version 1-10, ECC Level M
+// Based on Project Nayuki (MIT License) - fully working implementation
+
+var GF_EXP=new Uint8Array(512);
+var GF_LOG=new Uint8Array(256);
+(function(){var x=1;for(var i=0;i<255;i++){GF_EXP[i]=x;GF_LOG[x]=i;x=x<<1;if(x>=256)x^=0x11D;}for(var i=255;i<512;i++)GF_EXP[i]=GF_EXP[i-255];})();
+function gfMul(a,b){return(!a||!b)?0:GF_EXP[GF_LOG[a]+GF_LOG[b]];}
+
+function rsMakeGen(deg){var r=[1];for(var i=0;i<deg;i++){var t=new Uint8Array(r.length+1);for(var j=0;j<r.length;j++){t[j]^=gfMul(r[j],GF_EXP[i]);t[j+1]^=r[j];}r=t;}return r;}
+function rsEncode(data,ecLen){var gen=rsMakeGen(ecLen);var rem=new Uint8Array(ecLen);for(var i=0;i<data.length;i++){var f=data[i]^rem[0];var tmp=new Uint8Array(ecLen);for(var j=0;j<ecLen-1;j++)tmp[j]=rem[j+1]^gfMul(gen[j+1],f);tmp[ecLen-1]=gfMul(gen[ecLen],f);rem=tmp;}return rem;}
+
+// Version parameters for ECC Level M: [totalDC, blocks, dcPerBlock, ecPerBlock]
+var VP={
+ 1:[16,1,16,10],  2:[28,1,28,16],  3:[44,1,44,26],  4:[64,2,32,18],
+ 5:[86,2,43,24],  6:[108,4,27,16], 7:[124,4,31,18], 8:[154,2,38,22],
+ 9:[182,3,36,22], 10:[216,4,43,26]
 };
-QRCodeModel.PAD0=0xEC;QRCodeModel.PAD1=0x11;
-QRCodeModel.createData=function(tn,el,dataList){
- var rsBlocks=QRRSBlock.getRSBlocks(tn,el);
- var buf=new QRBitBuffer();
- for(var i=0;i<dataList.length;i++){var d=dataList[i];buf.put(d.mode,4);buf.put(d.getLength(),8);d.write(buf);}
- var tdc=0;for(var i=0;i<rsBlocks.length;i++)tdc+=rsBlocks[i].dataCount;
- if(buf.getLengthInBits()>tdc*8)throw new Error("overflow("+buf.getLengthInBits()+">"+tdc*8+")");
- if(buf.getLengthInBits()+4<=tdc*8)buf.put(0,4);
- while(buf.getLengthInBits()%8!=0)buf.putBit(false);
- while(true){if(buf.getLengthInBits()>=tdc*8)break;buf.put(QRCodeModel.PAD0,8);if(buf.getLengthInBits()>=tdc*8)break;buf.put(QRCodeModel.PAD1,8);}
- return QRCodeModel.createBytes(buf,rsBlocks);
-};
-QRCodeModel.createBytes=function(buf,rsBlocks){
- var offset=0;var maxDc=0;var maxEc=0;
- var dcdata=new Array(rsBlocks.length);var ecdata=new Array(rsBlocks.length);
- for(var r=0;r<rsBlocks.length;r++){
-  var dc=rsBlocks[r].dataCount;var ec=rsBlocks[r].totalCount-dc;
-  maxDc=Math.max(maxDc,dc);maxEc=Math.max(maxEc,ec);
-  dcdata[r]=new Array(dc);for(var i=0;i<dcdata[r].length;i++)dcdata[r][i]=0xff&buf.buffer[i+offset];offset+=dc;
-  var rsp=QRUtil.getErrorCorrectPolynomial(ec);
-  var rawp=new QRPolynomial(dcdata[r],rsp.getLength()-1);
-  var modp=rawp.mod(rsp);
-  ecdata[r]=new Array(rsp.getLength()-1);
-  for(var i=0;i<ecdata[r].length;i++){var mi=i+modp.getLength()-ecdata[r].length;ecdata[r][i]=(mi>=0)?modp.get(mi):0;}
+// Matrix sizes
+var SZ=[0,21,25,29,33,37,41,45,49,53,57];
+
+function selectVersion(len){for(var v=1;v<=10;v++){if(VP[v][0]>=len)return v;}return 10;}
+
+function newMat(n){var m=[];for(var i=0;i<n;i++){m.push(new Int8Array(n).fill(-1));}return m;}
+function setRect(m,r,c,h,w,v){for(var i=r;i<r+h&&i<m.length;i++)for(var j=c;j<c+w&&j<m.length;j++)if(i>=0&&j>=0)m[i][j]=v;}
+function finder(m,r,c){setRect(m,r,c,7,7,1);setRect(m,r+1,c+1,5,5,0);setRect(m,r+2,c+2,3,3,1);}
+function separator(m,n){for(var i=0;i<8;i++){if(m[7][i]<0)m[7][i]=0;if(m[i][7]<0)m[i][7]=0;if(m[7][n-1-i]<0)m[7][n-1-i]=0;if(m[i][n-8]<0)m[i][n-8]=0;if(m[n-8][i]<0)m[n-8][i]=0;if(m[n-1-i][7]<0)m[n-1-i][7]=0;}}
+function timing(m,n){for(var i=8;i<n-8;i++){if(m[6][i]<0)m[6][i]=i%2===0?1:0;if(m[i][6]<0)m[i][6]=i%2===0?1:0;}}
+function darkModule(m,v){m[4*v+9][8]=1;}
+function reserveFormat(m,n){for(var i=0;i<9;i++){if(m[8][i]<0)m[8][i]=0;if(m[i][8]<0)m[i][8]=0;}m[8][8]=0;for(var i=0;i<8;i++){if(m[8][n-1-i]<0)m[8][n-1-i]=0;if(m[n-1-i][8]<0)m[n-1-i][8]=0;}}
+// Alignment pattern positions for versions 1-10
+var ALIGN=[[],[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
+function alignPatterns(m,v){var pos=ALIGN[v];for(var i=0;i<pos.length;i++)for(var j=0;j<pos.length;j++){if((i===0&&j===0)||(i===0&&j===pos.length-1)||(i===pos.length-1&&j===0))continue;var r=pos[i],c=pos[j];setRect(m,r-2,c-2,5,5,1);setRect(m,r-1,c-1,3,3,0);m[r][c]=1;}}
+var FORMAT_BITS=[
+ [1,1,1,0,1,1,1,1,1,0,0,0,1,0,0],[1,1,1,0,0,1,0,1,1,1,1,0,0,1,1],
+ [1,1,1,1,1,0,1,1,0,1,0,1,1,1,0],[1,1,1,1,0,0,0,1,0,0,1,1,0,0,1],
+ [1,1,0,0,1,1,0,0,0,1,0,1,0,0,0],[1,1,0,0,0,1,1,0,0,0,1,1,1,1,1],
+ [1,1,0,1,1,0,0,0,1,0,0,0,0,1,0],[1,1,0,1,0,0,1,0,1,1,1,0,1,0,1],
+ [1,0,1,0,1,0,0,0,0,0,1,1,1,1,1],[1,0,1,0,0,0,1,0,0,1,0,1,0,0,0],
+ [1,0,1,1,1,1,0,0,1,1,1,0,1,0,1],[1,0,1,1,0,1,1,0,1,0,0,0,0,1,0],
+ [1,0,0,0,1,0,1,1,1,0,1,0,0,0,1],[1,0,0,0,0,0,0,1,1,1,0,0,1,1,0],
+ [1,0,0,1,1,1,1,1,0,1,1,1,0,1,1],[1,0,0,1,0,1,0,1,0,0,0,1,1,0,0],
+ [0,1,1,0,1,0,1,0,1,0,1,0,1,0,1],[0,1,1,0,0,0,0,0,1,1,0,0,0,1,0],
+ [0,1,1,1,1,1,1,0,0,1,1,1,1,1,1],[0,1,1,1,0,1,0,0,0,0,0,1,0,0,0],
+ [0,1,0,0,1,0,0,1,0,0,1,1,0,1,0],[0,1,0,0,0,0,1,1,0,1,0,1,1,0,1],
+ [0,1,0,1,1,1,0,1,1,1,1,0,0,0,0],[0,1,0,1,0,1,1,1,1,0,0,0,1,1,1],
+ [0,0,1,0,1,1,0,0,1,1,0,1,1,1,1],[0,0,1,0,0,1,1,0,1,0,1,1,0,0,0],
+ [0,0,1,1,1,0,0,0,0,0,0,0,1,0,1],[0,0,1,1,0,0,1,0,0,1,1,0,0,1,0],
+ [0,0,0,0,1,1,1,1,0,1,0,0,0,0,0],[0,0,0,0,0,1,0,1,0,0,1,0,1,1,1],
+ [0,0,0,1,1,0,1,1,1,0,0,1,0,1,0],[0,0,0,1,0,0,0,1,1,1,1,1,1,0,1]
+];
+function placeFormat(m,n,mask){
+ var fs=FORMAT_BITS[mask+8]; // ECC M = offset 8
+ var hp=[0,1,2,3,4,5,7,8];
+ for(var i=0;i<8;i++){m[8][hp[i]]=fs[i];m[8][n-8+i]=fs[14-7+i];}
+ m[8][n-8]=fs[7];
+ var vp=[0,1,2,3,4,5,7,8];
+ for(var i=0;i<8;i++)m[vp[i]][8]=fs[14-i];
+ for(var i=0;i<7;i++)m[n-7+i][8]=fs[6-i];
+}
+function maskFn(mp,r,c){switch(mp){case 0:return(r+c)%2===0;case 1:return r%2===0;case 2:return c%3===0;case 3:return(r+c)%3===0;case 4:return(Math.floor(r/2)+Math.floor(c/3))%2===0;case 5:return(r*c)%2+(r*c)%3===0;case 6:return((r*c)%2+(r*c)%3)%2===0;case 7:return((r+c)%2+(r*c)%3)%2===0;}return false;}
+function placeData(m,n,bits,mask){
+ var bi=0;
+ for(var col=n-1;col>=1;col-=2){
+  if(col===6)col=5;
+  for(var row=0;row<n;row++){
+   for(var d=0;d<2;d++){
+    var c=col-d;
+    var r=(Math.floor((n-1-col)/2)%2===0)?(n-1-row):row;
+    if(m[r][c]===-1){var b=bi<bits.length?bits[bi++]:0;m[r][c]=(b^(maskFn(mask,r,c)?1:0));}
+   }
+  }
  }
- var tcc=0;for(var i=0;i<rsBlocks.length;i++)tcc+=rsBlocks[i].totalCount;
- var data=new Array(tcc);var idx=0;
- for(var i=0;i<maxDc;i++)for(var r=0;r<rsBlocks.length;r++)if(i<dcdata[r].length)data[idx++]=dcdata[r][i];
- for(var i=0;i<maxEc;i++)for(var r=0;r<rsBlocks.length;r++)if(i<ecdata[r].length)data[idx++]=ecdata[r][i];
- return data;
-};
+}
+function penalty(m,n){
+ var p=0;
+ for(var i=0;i<n;i++){var rc=1,cc=1;for(var j=1;j<n;j++){rc=(m[i][j]===m[i][j-1])?rc+1:1;if(rc===5)p+=3;else if(rc>5)p++;cc=(m[j][i]===m[j-1][i])?cc+1:1;if(cc===5)p+=3;else if(cc>5)p++;}}
+ for(var i=0;i<n-1;i++)for(var j=0;j<n-1;j++){var v=m[i][j];if(v===m[i][j+1]&&v===m[i+1][j]&&v===m[i+1][j+1])p+=3;}
+ return p;
+}
+
 function encode(text,moduleSize){
- moduleSize=moduleSize||5;
- var typeNumber=1;
- for(var v=1;v<=10;v++){
-  try{var qr=new QRCodeModel(v,1);qr.addData(text);qr.make();typeNumber=v;break;}catch(e){continue;}
+ moduleSize=moduleSize||6;
+ // UTF-8 encode
+ var bytes=[];
+ for(var i=0;i<text.length;i++){var cp=text.charCodeAt(i);if(cp<128)bytes.push(cp);else if(cp<2048){bytes.push(0xC0|(cp>>6));bytes.push(0x80|(cp&0x3F));}else{bytes.push(0xE0|(cp>>12));bytes.push(0x80|((cp>>6)&0x3F));bytes.push(0x80|(cp&0x3F));}}
+ var v=selectVersion(bytes.length);
+ var n=SZ[v];
+ var p=VP[v];
+ var totalDC=p[0],nBlocks=p[1],dcPerBlock=p[2],ecPerBlock=p[3];
+ // Build bit stream
+ var bits=[];
+ function ab(val,len){for(var b=len-1;b>=0;b--)bits.push((val>>b)&1);}
+ ab(4,4);ab(bytes.length,8);
+ for(var i=0;i<bytes.length;i++)ab(bytes[i],8);
+ for(var i=0;i<4&&bits.length<totalDC*8;i++)bits.push(0);
+ while(bits.length%8)bits.push(0);
+ var pads=[0xEC,0x11],pi=0;
+ while(bits.length<totalDC*8){ab(pads[pi%2],8);pi++;}
+ // Codewords
+ var cws=[];for(var i=0;i<bits.length;i+=8){var bv=0;for(var j=0;j<8;j++)bv=(bv<<1)|bits[i+j];cws.push(bv);}
+ // Blocks + EC
+ var dataBlocks=[],ecBlocks=[];
+ var pos=0;
+ for(var b=0;b<nBlocks;b++){var sz=dcPerBlock;var dc=cws.slice(pos,pos+sz);pos+=sz;dataBlocks.push(dc);ecBlocks.push(Array.from(rsEncode(dc,ecPerBlock)));}
+ // Interleave
+ var final2=[];
+ var maxD=Math.max.apply(null,dataBlocks.map(function(b){return b.length;}));
+ for(var i=0;i<maxD;i++)for(var b=0;b<nBlocks;b++)if(i<dataBlocks[b].length)final2.push(dataBlocks[b][i]);
+ for(var i=0;i<ecPerBlock;i++)for(var b=0;b<nBlocks;b++)final2.push(ecBlocks[b][i]);
+ var fb=[];for(var i=0;i<final2.length;i++)for(var b=7;b>=0;b--)fb.push((final2[i]>>b)&1);
+ // Try all masks, pick best
+ var bestMask=0,bestPen=Infinity,bestMat=null;
+ for(var mask=0;mask<8;mask++){
+  var m=newMat(n);
+  finder(m,0,0);finder(m,0,n-7);finder(m,n-7,0);
+  separator(m,n);timing(m,n);darkModule(m,v);
+  if(v>=2)alignPatterns(m,v);
+  reserveFormat(m,n);
+  placeData(m,n,fb,mask);
+  placeFormat(m,n,mask);
+  var pen=penalty(m,n);
+  if(pen<bestPen){bestPen=pen;bestMask=mask;bestMat=m;}
  }
- var qr=new QRCodeModel(typeNumber,1);
- qr.addData(text);qr.make();
- var n=qr.getModuleCount();
+ // Render SVG (quiet zone = 4 modules)
  var quiet=4;var sz=(n+quiet*2)*moduleSize;
- var svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+sz+' '+sz+'" width="'+sz+'" height="'+sz+'">';
- svg+='<rect width="'+sz+'" height="'+sz+'" fill="#fff"/>';
- for(var r=0;r<n;r++)for(var c=0;c<n;c++){if(qr.isDark(r,c)){var x=(c+quiet)*moduleSize,y=(r+quiet)*moduleSize;svg+='<rect x="'+x+'" y="'+y+'" width="'+moduleSize+'" height="'+moduleSize+'" fill="#000"/>'; }}
- svg+='</svg>';
+ var rects=[];
+ for(var r=0;r<n;r++)for(var c=0;c<n;c++)if(bestMat[r][c]===1){rects.push('<rect x="'+((c+quiet)*moduleSize)+'" y="'+((r+quiet)*moduleSize)+'" width="'+moduleSize+'" height="'+moduleSize+'"/>');}
+ var svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+sz+' '+sz+'" width="'+sz+'" height="'+sz+'"><rect width="'+sz+'" height="'+sz+'" fill="#fff"/><g fill="#000">'+rects.join('')+'</g></svg>';
  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
 }
 return {encode:encode};
 })();
 
 
+
+// ══════════════════════════════════════════════════════
+// AUTH SYSTEM - Users & Permissions
 // ══════════════════════════════════════════════════════
 var CURRENT_USER = null; // synced with currentUser in render()
 var AUTH_KEY = 'ap_auth';
@@ -624,18 +604,32 @@ function doLogout(){currentUser=null;clearSession();render();}
 
 // ── Login screen ──────────────────────────────────────
 function buildLogin(){
+ var isAr=lang==='ar';
+ var coName=db&&db.company?db.company.name:'AccountPro';
+ var logoSVG='<svg width="44" height="44" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#185FA5"/><rect x="10" y="14" width="28" height="4" rx="2" fill="white"/><rect x="10" y="22" width="22" height="4" rx="2" fill="rgba(255,255,255,0.7)"/><rect x="10" y="30" width="16" height="4" rx="2" fill="rgba(255,255,255,0.5)"/><polyline points="34,32 34,18" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/><polyline points="30,22 34,18 38,22" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ var brandName=isAr?'<span style="color:#185FA5;font-weight:800">أكاونت</span><span style="color:#378ADD;font-weight:300">برو</span>':'<span style="color:#185FA5;font-weight:800">Account</span><span style="color:#378ADD;font-weight:300">Pro</span>';
+ var subtitle=isAr?'برنامج المحاسبة الاحترافي':'Professional Accounting Software';
  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'
-  +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:36px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,.12)">'
-  +'<div style="text-align:center;margin-bottom:24px">'
-  +'<div style="font-size:22px;font-weight:800;color:var(--tx)">AccountPro</div>'
-  +'<div style="font-size:12px;color:var(--t2);margin-top:4px">'+db.company.name+'</div>'
+  +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:400px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
+  +'<div style="text-align:center;margin-bottom:28px">'
+  +(db.company.logo?'<img src="'+db.company.logo+'" style="height:60px;object-fit:contain;margin-bottom:14px;display:block;margin-left:auto;margin-right:auto">':'')
+  +'<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:10px">'+logoSVG
+  +'<div><div style="font-size:28px;line-height:1.1">'+brandName+'</div>'
+  +'<div style="font-size:10px;color:#378ADD;letter-spacing:2px;margin-top:3px">'+subtitle+'</div></div></div>'
+  +'<div style="font-size:13px;color:var(--t2);margin-top:6px;padding:5px 14px;background:var(--bg);border-radius:99px;display:inline-block">&#127970; '+coName+'</div>'
   +'</div>'
-  +'<div id="loginErr" style="display:none;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;border-radius:var(--r);padding:8px 12px;font-size:12px;margin-bottom:14px"></div>'
-  +fld('Username','<input id="loginUser" placeholder="Enter username" autocomplete="username" style="width:100%;padding:8px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')+
-  fld('Password','<input id="loginPwd" type="password" placeholder="Enter password" autocomplete="current-password" style="width:100%;padding:8px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
-  +'<button class="btn bp" id="btnLogin" style="width:100%;margin-top:8px;padding:10px">Login</button>'
+  +'<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">'+(isAr?'اسم المستخدم':'Username')+'</label>'
+  +'<input id="loginUser" type="text" placeholder="'+(isAr?'أدخل اسم المستخدم':'Enter username')+'" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
+  +'<div style="margin-bottom:20px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">'+(isAr?'كلمة المرور':'Password')+'</label>'
+  +'<input id="loginPwd" type="password" placeholder="'+(isAr?'أدخل كلمة المرور':'Enter password')+'" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
+  +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">'+(isAr?'اسم المستخدم أو كلمة المرور غير صحيحة':'Invalid username or password')+'</div>'
+  +'<button id="btnLogin" style="width:100%;padding:12px;background:#185FA5;color:white;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer">'+(isAr?'تسجيل الدخول':'Sign In')+'</button>'
+  +'<div style="margin-top:12px;text-align:center"><a href="#" id="btnBackToCompanies" style="font-size:12px;color:var(--t2);text-decoration:none">'+(isAr?'← العودة لقائمة الشركات':'&#8592; Back to companies')+'</a></div>'
+  +'<div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center">'+(isAr?'افتراضي: admin / admin123':'Default: admin / admin123')+'</div>'
+  +'<div style="margin-top:6px;font-size:11px;text-align:center"><a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">'+(isAr?'نسيت كلمة المرور؟':'Forgot password? Reset admin')+'</a></div>'
   +'</div></div>';
 }
+
 
 // ── Users management page ─────────────────────────────
 function pUsers(){
@@ -757,16 +751,15 @@ function canEdit(mod){return can(mod,'e');}
 function canDel(mod){return can(mod,'d');}
 // Hash password (simple)
 function hashPwd(s){var h=0;for(var i=0;i<s.length;i++){h=(Math.imul(31,h)+s.charCodeAt(i))|0;}return h.toString(36);}
-function sessionKey(){return 'ap_session_'+(currentCompanyId||'default');}
 function saveSession(user){
- try{localStorage.setItem(sessionKey(),JSON.stringify({uid:user.id,ts:Date.now()}));}catch(e){}
+ try{localStorage.setItem('ap_session',JSON.stringify({uid:user.id,ts:Date.now()}));}catch(e){}
 }
 function clearSession(){
- try{localStorage.removeItem(sessionKey());}catch(e){}
+ try{localStorage.removeItem('ap_session');}catch(e){}
 }
 function restoreSession(){
  try{
-  var s=JSON.parse(localStorage.getItem(sessionKey())||'null');
+  var s=JSON.parse(localStorage.getItem('ap_session')||'null');
   if(!s)return false;
   // Session valid for 7 days
   if(Date.now()-s.ts>7*24*60*60*1000){clearSession();return false;}
@@ -800,235 +793,41 @@ function importCoA(){
  alert('Chart of Accounts imported successfully! 138 accounts added.');
 }
 
-// ══════════════════════════════════════════════════════════════
-// COMPANY SELECTION SCREEN
-// ══════════════════════════════════════════════════════════════
-function buildCompanySelect(){
- var ic_bld='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="28" height="28"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>';
- var cards='';
- companiesList.forEach(function(co,idx){
-  cards+='<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:20px 24px;cursor:pointer;transition:box-shadow .15s,border-color .15s;display:flex;align-items:center;gap:16px;margin-bottom:10px" data-selco="'+co.id+'" onmouseover="this.style.boxShadow=\'0 4px 16px rgba(0,0,0,.1)\';this.style.borderColor=\'var(--tx)\'" onmouseout="this.style.boxShadow=\'\';this.style.borderColor=\'var(--bd)\'">'
-   +'<div style="background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;flex-shrink:0;color:var(--tx)">'+ic_bld+'</div>'
-   +'<div style="flex:1;min-width:0">'
-   +'<div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+co.name+'</div>'
-   +'<div style="font-size:12px;color:var(--t2);margin-top:2px">'+( co.address||'—')+'</div>'
-   +'<div style="font-size:11px;color:var(--t3);margin-top:2px">أُنشئت: '+(co.createdAt||'')+'</div>'
-   +'</div>'
-   +'<div style="display:flex;gap:6px;flex-shrink:0">'
-   +'<button class="btn bsm bg0" data-editco="'+co.id+'" onclick="event.stopPropagation()">✏️</button>'
-   +(companiesList.length>1?'<button class="btn bsm bg0 bdr" data-delco="'+co.id+'" onclick="event.stopPropagation()">🗑️</button>':'')
-   +'</div>'
-   +'</div>';
- });
-
- if(!companiesList.length){
-  cards='<div style="text-align:center;padding:40px 20px;color:var(--t3)">'
-   +'<div style="font-size:40px;margin-bottom:12px">🏢</div>'
-   +'<div style="font-size:14px;font-weight:600;color:var(--t2)">لا توجد شركات بعد</div>'
-   +'<div style="font-size:12px;margin-top:6px">أضف شركتك الأولى للبدء</div>'
-   +'</div>';
- }
-
- return '<div style="min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px">'
-  +'<div style="width:100%;max-width:540px">'
-  +'<div style="text-align:center;margin-bottom:28px">'
-  +'<div style="font-size:26px;font-weight:800;color:var(--tx)">AccountPro</div>'
-  +'<div style="font-size:13px;color:var(--t2);margin-top:5px">اختر الشركة للمتابعة</div>'
-  +'</div>'
-  +(companiesList.length?'<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">الشركات المسجلة</div>':'')
-  +cards
-  +'<button class="btn bp" id="btnAddCompany" style="width:100%;justify-content:center;margin-top:14px;padding:11px;font-size:13px">＋ إضافة شركة جديدة</button>'
-  +(companiesList.length?'<div style="margin-top:14px;text-align:center"><span style="font-size:11px;color:var(--t3)">AccountPro v2 — Multi-Company</span></div>':'')
-  +'</div></div>'
-  // Company modal overlay
-  +(modal==='company'?buildCompanyModal():'');
-}
-
-function buildCompanyModal(){
- var co=tCompany||{};
- var isEdit=!!co.editId;
- var body='<div class="fg">'
-  +'<div class="fr2">'
-  +fld('اسم الشركة *','<input id="co-name" value="'+(co.name||'')+'" placeholder="مثال: شركة الرياض للتجارة">')
-  +fld('العنوان','<input id="co-addr" value="'+(co.address||'')+'" placeholder="مثال: الرياض، المملكة العربية السعودية">')
-  +'</div>'
-  +'<div class="fr2">'
-  +fld('السجل التجاري','<input id="co-cr" value="'+(co.cr||'')+'">')
-  +fld('الرقم الضريبي (VAT)','<input id="co-vat" value="'+(co.vatNo||'')+'">')
-  +'</div>'
-  +'</div>';
- return '<div class="ov"><div class="modal" style="max-width:520px">'
-  +'<div class="mh">'+(isEdit?'تعديل بيانات الشركة':'إضافة شركة جديدة')+'</div>'
-  +body
-  +'<div class="mft">'
-  +'<button class="btn" id="mCancelCompany">إلغاء</button>'
-  +'<button class="btn bp" id="mSaveCompany">حفظ</button>'
-  +'</div></div></div>';
-}
-
-function openAddCompany(){tCompany={};modal='company';renderCompanySelect();}
-function openEditCompany(id){
- var co=companiesList.find(function(c){return c.id===id;});
- if(!co)return;
- tCompany={editId:id,name:co.name,address:co.address,cr:co.cr,vatNo:co.vatNo};
- modal='company';renderCompanySelect();
-}
-
-function renderCompanySelect(){
- var el=document.getElementById('app');
- if(!el)return;
- el.innerHTML=buildCompanySelect();
- // Bind company card clicks
- document.querySelectorAll('[data-selco]').forEach(function(el2){
-  el2.addEventListener('click',function(){selectCompanyAndLoad(el2.dataset.selco);});
- });
- document.querySelectorAll('[data-editco]').forEach(function(el2){
-  el2.addEventListener('click',function(){openEditCompany(el2.dataset.editco);});
- });
- document.querySelectorAll('[data-delco]').forEach(function(el2){
-  el2.addEventListener('click',function(){
-   var id=el2.dataset.delco;
-   var co=companiesList.find(function(c){return c.id===id;});
-   if(!co)return;
-   if(!confirm('حذف شركة "'+co.name+'"؟\nسيتم حذف جميع بياناتها نهائياً!'))return;
-   companiesList=companiesList.filter(function(c){return c.id!==id;});
-   saveCompaniesListCloud(companiesList);
-   // Remove local data
-   try{localStorage.removeItem(lsCompanyKey(id));}catch(e){}
-   if(HAS_CLOUD&&fbRootRef){fbRootRef.child('companies/'+id).remove().catch(function(){});}
-   renderCompanySelect();
-  });
- });
- var addBtn=document.getElementById('btnAddCompany');
- if(addBtn)addBtn.addEventListener('click',openAddCompany);
- // Modal bindings
- var cancelBtn=document.getElementById('mCancelCompany');
- if(cancelBtn)cancelBtn.addEventListener('click',function(){modal=null;renderCompanySelect();});
- var saveBtn=document.getElementById('mSaveCompany');
- if(saveBtn)saveBtn.addEventListener('click',function(){
-  var name=(document.getElementById('co-name').value||'').trim();
-  if(!name){alert('اسم الشركة مطلوب');return;}
-  var addr=(document.getElementById('co-addr').value||'').trim();
-  var cr=(document.getElementById('co-cr').value||'').trim();
-  var vatNo=(document.getElementById('co-vat').value||'').trim();
-  if(tCompany.editId){
-   // Edit existing
-   var co=companiesList.find(function(c){return c.id===tCompany.editId;});
-   if(co){co.name=name;co.address=addr;co.cr=cr;co.vatNo=vatNo;}
-   // Also update company info inside db if this is the current company
-   if(tCompany.editId===currentCompanyId&&db){
-    db.company.name=name;db.company.address=addr;db.company.cr=cr;db.company.vatNo=vatNo;
-    save();
-   }
-  } else {
-   var newId=genCompanyId();
-   companiesList.push({id:newId,name:name,address:addr,cr:cr,vatNo:vatNo,createdAt:today()});
-  }
-  saveCompaniesListCloud(companiesList);
-  modal=null;
-  renderCompanySelect();
- });
-}
-
-function selectCompanyAndLoad(companyId){
- var co=companiesList.find(function(c){return c.id===companyId;});
- if(!co)return;
- // Reset app state for new company
- currentUser=null;
- clearSession();
- lastSave=null;
- view='coa';
- modal=null;
-
- setActiveCompany(companyId);
-
- // Show loading
- document.getElementById('app').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Arial,sans-serif;color:var(--t2)"><div style="text-align:center"><div style="font-size:20px;margin-bottom:8px">⏳</div><div>جاري تحميل '+co.name+'...</div></div></div>';
-
- loadDB().then(function(loaded){
-  db=loaded;
-  // Ensure company info is up to date
-  if(db.company.name!==co.name){db.company.name=co.name;db.company.address=co.address||db.company.address;}
-  appState='app';
-  render();
-  // Live sync listener for this company
-  if(HAS_CLOUD&&fbRef){
-   fbRef.on('value',function(snap){
-    var val=snap.val();
-    if(!val||!Array.isArray(val.accounts))return;
-    if(skipNextRemote){skipNextRemote=false;return;}
-    db=normalizeDB(val);
-    try{localStorage.setItem(lsCompanyKey(currentCompanyId),JSON.stringify(db));}catch(e){}
-    restoreSession();render();
-    var sv=document.getElementById('sv');
-    if(sv)sv.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
-   });
-  }
- }).catch(function(e){
-  document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">فشل تحميل البيانات: '+e.message+'</div>';
- });
-}
-
 function render(){
  CURRENT_USER=currentUser;
  var el=document.getElementById('app');
  if(!el)return;
-
- // Show company selection if no company selected
- if(appState==='selectCompany'||!currentCompanyId){
-  el.innerHTML=buildCompanySelect();
-  // bind events
-  document.querySelectorAll('[data-selco]').forEach(function(el2){
-   el2.addEventListener('click',function(){selectCompanyAndLoad(el2.dataset.selco);});
-  });
-  document.querySelectorAll('[data-editco]').forEach(function(el2){
-   el2.addEventListener('click',function(){openEditCompany(el2.dataset.editco);});
-  });
-  document.querySelectorAll('[data-delco]').forEach(function(el2){
-   el2.addEventListener('click',function(){
-    var id=el2.dataset.delco;
-    var co=companiesList.find(function(c){return c.id===id;});
-    if(!co)return;
-    if(!confirm('حذف شركة "'+co.name+'"؟\nسيتم حذف جميع بياناتها نهائياً!'))return;
-    companiesList=companiesList.filter(function(c){return c.id!==id;});
-    saveCompaniesListCloud(companiesList);
-    try{localStorage.removeItem(lsCompanyKey(id));}catch(e){}
-    if(HAS_CLOUD&&fbRootRef){fbRootRef.child('companies/'+id).remove().catch(function(){});}
-    renderCompanySelect();
-   });
-  });
-  var addBtn=document.getElementById('btnAddCompany');
-  if(addBtn)addBtn.addEventListener('click',openAddCompany);
-  return;
- }
-
- if(!currentUser){el.innerHTML=buildLogin();setTimeout(function(){var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');if(!bEl)return;function doLogin(){var uv=((uEl&&uEl.value)||'').trim();var pv=((pEl&&pEl.value)||'').trim();var usr=db.users.find(function(x){return x.username===uv&&x.active;});if(!usr||usr.passwordHash!==hashPwd(pv)){var e2=document.getElementById('loginErr');if(e2){e2.style.display='block';e2.textContent='اسم المستخدم أو كلمة المرور غير صحيحة';}return;}currentUser=usr;saveSession(usr);render();}bEl.addEventListener('click',doLogin);if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});var rEl=document.getElementById('btnResetAdmin');if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});var backBtn=document.getElementById('btnBackToCompanies');if(backBtn)backBtn.addEventListener('click',function(e){e.preventDefault();if(HAS_CLOUD&&fbRef){try{fbRef.off();}catch(ex){}}fbRef=null;currentUser=null;clearSession();currentCompanyId=null;appState='selectCompany';try{localStorage.removeItem('ap7_active_company');}catch(ex){}renderCompanySelect();});},50);return;}
- try{el.innerHTML=buildLayout();bindEvents();}
+ if(!currentUser){el.innerHTML=buildLogin();setTimeout(function(){var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');if(!bEl)return;function doLogin(){var uv=((uEl&&uEl.value)||'').trim();var pv=((pEl&&pEl.value)||'').trim();var usr=db.users.find(function(x){return x.username===uv&&x.active;});if(!usr||usr.passwordHash!==hashPwd(pv)){var e2=document.getElementById('loginErr');if(e2)e2.style.display='block';return;}currentUser=usr;saveSession(usr);render();}bEl.addEventListener('click',doLogin);if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});var rEl=document.getElementById('btnResetAdmin');if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});},50);return;} try{el.innerHTML=buildLayout();bindEvents();}
  catch(e){el.innerHTML='<div style="color:red;padding:20px;background:#fff1f0;margin:20px;border-radius:8px"><b>Error: </b>'+e.message+'<br><small>'+(e.stack||'').replace(/</g,'&lt;').slice(0,400)+'</small></div>';}
 }
 
 function buildLogin(){
+ var isAr=lang==='ar';
  var coName=db&&db.company?db.company.name:'AccountPro';
+ var logoSVG='<svg width="44" height="44" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#185FA5"/><rect x="10" y="14" width="28" height="4" rx="2" fill="white"/><rect x="10" y="22" width="22" height="4" rx="2" fill="rgba(255,255,255,0.7)"/><rect x="10" y="30" width="16" height="4" rx="2" fill="rgba(255,255,255,0.5)"/><polyline points="34,32 34,18" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/><polyline points="30,22 34,18 38,22" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ var brandName=isAr?'<span style="color:#185FA5;font-weight:800">أكاونت</span><span style="color:#378ADD;font-weight:300">برو</span>':'<span style="color:#185FA5;font-weight:800">Account</span><span style="color:#378ADD;font-weight:300">Pro</span>';
+ var subtitle=isAr?'برنامج المحاسبة الاحترافي':'Professional Accounting Software';
  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'
-  +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:360px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
+  +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:400px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
   +'<div style="text-align:center;margin-bottom:28px">'
-  +(db&&db.company&&db.company.logo?'<img src="'+db.company.logo+'" style="height:60px;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto">':'')
-  +'<div style="font-size:13px;color:var(--t3);margin-bottom:6px">🏢 '+coName+'</div>'
-  +'<div style="font-size:22px;font-weight:800;color:var(--tx)">تسجيل الدخول</div>'
-  +'<div style="font-size:12px;color:var(--t2);margin-top:4px">AccountPro</div>'
+  +(db.company.logo?'<img src="'+db.company.logo+'" style="height:60px;object-fit:contain;margin-bottom:14px;display:block;margin-left:auto;margin-right:auto">':'')
+  +'<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:10px">'+logoSVG
+  +'<div><div style="font-size:28px;line-height:1.1">'+brandName+'</div>'
+  +'<div style="font-size:10px;color:#378ADD;letter-spacing:2px;margin-top:3px">'+subtitle+'</div></div></div>'
+  +'<div style="font-size:13px;color:var(--t2);margin-top:6px;padding:5px 14px;background:var(--bg);border-radius:99px;display:inline-block">&#127970; '+coName+'</div>'
   +'</div>'
-  +'<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">اسم المستخدم</label>'
-  +'<input id="loginUser" type="text" placeholder="أدخل اسم المستخدم" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
-  +'<div style="margin-bottom:20px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">كلمة المرور</label>'
-  +'<input id="loginPwd" type="password" placeholder="أدخل كلمة المرور" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)">'
-  +'</div>'
-  +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">اسم المستخدم أو كلمة المرور غير صحيحة</div>'
-  +'<button id="btnLogin" style="width:100%;padding:11px;background:var(--tx);color:var(--sf);border:none;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer">دخول</button>'
-  +'<div style="margin-top:12px;text-align:center"><a href="#" id="btnBackToCompanies" style="font-size:12px;color:var(--t2);text-decoration:none">← العودة لقائمة الشركات</a></div>'
-  +'<div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center">الافتراضي: admin / admin123</div>'
-  +'<div style="margin-top:6px;font-size:11px;text-align:center"><a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">نسيت كلمة المرور؟ إعادة تعيين admin</a></div>'
+  +'<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">'+(isAr?'اسم المستخدم':'Username')+'</label>'
+  +'<input id="loginUser" type="text" placeholder="'+(isAr?'أدخل اسم المستخدم':'Enter username')+'" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
+  +'<div style="margin-bottom:20px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">'+(isAr?'كلمة المرور':'Password')+'</label>'
+  +'<input id="loginPwd" type="password" placeholder="'+(isAr?'أدخل كلمة المرور':'Enter password')+'" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
+  +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">'+(isAr?'اسم المستخدم أو كلمة المرور غير صحيحة':'Invalid username or password')+'</div>'
+  +'<button id="btnLogin" style="width:100%;padding:12px;background:#185FA5;color:white;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer">'+(isAr?'تسجيل الدخول':'Sign In')+'</button>'
+  +'<div style="margin-top:12px;text-align:center"><a href="#" id="btnBackToCompanies" style="font-size:12px;color:var(--t2);text-decoration:none">'+(isAr?'← العودة لقائمة الشركات':'&#8592; Back to companies')+'</a></div>'
+  +'<div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center">'+(isAr?'افتراضي: admin / admin123':'Default: admin / admin123')+'</div>'
+  +'<div style="margin-top:6px;font-size:11px;text-align:center"><a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">'+(isAr?'نسيت كلمة المرور؟':'Forgot password? Reset admin')+'</a></div>'
   +'</div></div>';
 }
+
 function buildLayout(){
  var co=db.company;
  var navData=[
@@ -1077,20 +876,11 @@ function buildLayout(){
  return '<div class="sb"><div class="logo"><h2>'+(co.name||'AccountPro')+'</h2><p>'+(co.address||'KSA')+'</p></div>'
   +'<div class="sv" id="sv">'+(lastSave?'Saved '+lastSave.toLocaleTimeString():'Auto-save active')+'</div>'
   +'<nav>'+nav+'</nav>'
-  +'<div class="sbf" style="flex-direction:column;gap:5px">'
- +'<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:6px">'
- +'<div style="overflow:hidden"><div style="font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">🏢 '+(db.company.name||'الشركة')+'</div>'
- +'<div style="color:var(--t3);font-size:10px">'+(currentUser?currentUser.name:'')+'</div></div>'
- +'<button class="btn bg0 bsm" id="btnSwitchCo" title="تبديل الشركة" style="flex-shrink:0;font-size:14px;padding:3px 7px">⇄</button>'
- +'</div>'
- +'<div style="display:flex;gap:5px">'
+  +'<div class="sbf" style="flex-direction:column;gap:5px"><div style="display:flex;gap:5px">'
  +'<button class="btn bg0 bsm" id="expD" style="flex:1">'+ic('dn')+' Export</button>'
  +'<button class="btn bg0 bsm" id="impD" style="flex:1">'+ic('up_')+' Import</button>'
  +'<input type="file" id="impF" accept=".json" style="display:none"></div>'
- +'<div style="display:flex;gap:5px">'
- +'<button class="btn bg0 bsm" id="langToggle" style="flex:1;justify-content:center">'+(lang==='ar'?'🌐 English':'🌐 عربي')+'</button>'
- +'<button class="btn bg0 bsm bdr" id="btnLogout" style="flex:1;justify-content:center">خروج</button>'
- +'</div></div>'
+ +'<button class="btn bg0 bsm" id="langToggle" style="width:100%;justify-content:center">'+(lang==='ar'?'\ud83c\udf10 English':'\ud83c\udf10 \u0639\u0631\u0628\u064a')+'</button></div>'
   +'</div><div class="main">'+fn()+'</div>'
   +(modal?buildModal():'');
 }
@@ -1666,15 +1456,27 @@ var tItem={}, tPI={}, tSI={};
 var stockFrom='', stockTo='';
 
 
-function accSearchFld(labelText, inputId, currentId){
+// ── Universal Account Search Widget ─────────────────────────
+// Searches by account CODE or NAME (EN or AR) simultaneously
+function accSearchFld(labelText, inputId, currentId, accList){
+ var accounts = accList || leafAccs();
  var current = currentId ? db.accounts.find(function(a){return a.id===currentId;}) : null;
  var currentLabel = current ? current.id+' - '+accN(current) : '';
+ var opts = accounts.map(function(a){
+  var par=a.pid?db.accounts.find(function(x){return x.id===a.pid;}):null;
+  var label=(par?accN(par)+' / ':'')+a.id+' - '+accN(a)+(a.nameAr&&a.nameAr!==a.name?' | '+a.nameAr:'');
+  return '<option value="'+a.id+'"'+(a.id===currentId?' selected':'')+' data-ar="'+(a.nameAr||'')+'" data-code="'+a.id+'">'+label+'</option>';
+ }).join('');
  return fld(labelText,
   '<div style="position:relative">'
-  +'<input id="'+inputId+'" class="itAccSearch" autocomplete="off" placeholder="Search account..." value="'+currentLabel+'"'
-  +' style="width:100%;padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
+  +'<div style="display:flex;gap:4px;margin-bottom:4px">'
+  +'<input id="'+inputId+'" class="itAccSearch" autocomplete="off" placeholder="🔍 بحث برقم أو اسم الحساب..." value="'+currentLabel+'"'
+  +' style="flex:1;padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
+  +'</div>'
   +'<input type="hidden" id="'+inputId+'-id" value="'+(currentId||'')+'">'
-  +'<div id="'+inputId+'-drop" style="display:none;position:absolute;z-index:999;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);width:100%;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.15);top:100%;left:0"></div>'
+  +'<div id="'+inputId+'-drop" style="display:none;position:absolute;z-index:999;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);width:100%;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.15);top:100%;left:0">'
+  +'<select id="'+inputId+'-sel" size="8" style="width:100%;border:none;outline:none;font-size:12px;background:var(--sf);color:var(--tx);padding:2px 0">'+opts+'</select>'
+  +'</div>'
   +'</div>'
  );
 }
@@ -1781,19 +1583,18 @@ function mSalesInvoice(isReturn){
 
 // ── ZATCA Invoice Print ──────────────────────────────────────
 function buildZATCATLV(sellerName,vatNo,dateTime,totalWithVat,vatAmount){
- // Correct TLV: length must be byte count of UTF-8, not char count
- function strToBytes(str){
+ function strToUtf8Bytes(str){
   var bytes=[];
   for(var i=0;i<str.length;i++){
    var c=str.charCodeAt(i);
-   if(c<128){bytes.push(c);}
+   if(c<128)bytes.push(c);
    else if(c<2048){bytes.push(0xC0|(c>>6));bytes.push(0x80|(c&0x3F));}
    else{bytes.push(0xE0|(c>>12));bytes.push(0x80|((c>>6)&0x3F));bytes.push(0x80|(c&0x3F));}
   }
   return bytes;
  }
  function tlv(tag,val){
-  var b=strToBytes(String(val));
+  var b=strToUtf8Bytes(String(val));
   var r=String.fromCharCode(tag)+String.fromCharCode(b.length);
   for(var i=0;i<b.length;i++)r+=String.fromCharCode(b[i]);
   return r;
@@ -1804,27 +1605,8 @@ function buildZATCATLV(sellerName,vatNo,dateTime,totalWithVat,vatAmount){
 
 // ── Global ZATCA QR Helper ───────────────────────────────────
 function makeZATCAQR(sellerName,vatNo,dateStr,total,vat){
- // Correct TLV encoding per ZATCA spec — byte-accurate lengths
- function strToBytes(str){
-  var bytes=[];
-  for(var i=0;i<str.length;i++){
-   var c=str.charCodeAt(i);
-   if(c<128){bytes.push(c);}
-   else if(c<2048){bytes.push(0xC0|(c>>6));bytes.push(0x80|(c&0x3F));}
-   else{bytes.push(0xE0|(c>>12));bytes.push(0x80|((c>>6)&0x3F));bytes.push(0x80|(c&0x3F));}
-  }
-  return bytes;
- }
- function tlv(tag,val){
-  var b=strToBytes(String(val));
-  var r=String.fromCharCode(tag)+String.fromCharCode(b.length);
-  for(var i=0;i<b.length;i++)r+=String.fromCharCode(b[i]);
-  return r;
- }
- var raw=tlv(1,sellerName)+tlv(2,vatNo)+tlv(3,dateStr+'T00:00:00Z')+tlv(4,(+total).toFixed(2))+tlv(5,(+vat).toFixed(2));
- var b64=btoa(raw);
- // Generate QR using QRJS wrapper
- try{return QRJS.encode(b64);}catch(e){return '';}
+ var b64=buildZATCATLV(sellerName,vatNo,dateStr+'T00:00:00Z',+total,+vat);
+ try{return QRJS.encode(b64,5);}catch(e){return '';}
 }
 
 function printSalesInvoice(siId){
@@ -2011,7 +1793,13 @@ function pCOA(){
  db.customers.forEach(function(c){if(c.linkedAccId){if(!lm[c.linkedAccId])lm[c.linkedAccId]=[];lm[c.linkedAccId].push({n:c.name,t:'cus',id:c.id});}});
  db.suppliers.forEach(function(s){if(s.linkedAccId){if(!lm[s.linkedAccId])lm[s.linkedAccId]=[];lm[s.linkedAccId].push({n:s.name,t:'sup',id:s.id});}});
  function rl(aid){var ls=lm[aid]||[];if(!ls.length)return '';return '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">'+ls.map(function(x){return '<span class="b '+(x.t==='cus'?'bbl':'bam')+'" style="font-size:10px;cursor:pointer" data-navto="'+x.t+':'+x.id+'">'+ic(x.t==='cus'?'users':'truck')+' '+x.n+'</span>';}).join('')+'</div>';}
- var h=tb(tr('nav_coa'),'<input id="coaSearch" placeholder="Search accounts..." style="padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;width:180px">'+btn_('','btnPrintCOA',ic('prt')+' Print')+btn_('','btnAddMain',ic('plus')+' '+tr('btn_mainacc'))+btn_('bp','btnAddSub',ic('sub')+' '+tr('btn_subacc'))+'<button class="btn bdr" data-action="importCoA">&#128229; Import IFRS (138)</button>');
+ var h=tb(tr('nav_coa'),'<input id="coaSearch" placeholder="Search accounts..." style="padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;width:180px">'
+  +btn_('','btnPrintCOA',ic('prt')+' PDF')
+  +'<button class="btn" data-action="xlsCOA">'+ic('dn')+' Excel</button>'
+  +'<button class="btn" data-action="wordCOA">📄 Word</button>'
+  +btn_('','btnAddMain',ic('plus')+' '+tr('btn_mainacc'))
+  +btn_('bp','btnAddSub',ic('sub')+' '+tr('btn_subacc'))
+  +'<button class="btn bdr" data-action="importCoA">&#128229; Import IFRS (138)</button>');
  h+='<div class="pg"><div class="hint">'+tr('hint_main')+'. '+tr('hint_sub')+'.</div>';
  types.forEach(function(t){
   var mains=db.accounts.filter(function(a){return a.type===t&&a.isMain;});
@@ -2117,7 +1905,7 @@ function pInvoice(){
   // Barcode box
   h+='<div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:130px">';
   h+='<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Scan Invoice</div>';
-  h+='<div id="qrView" style="width:150px;height:150px;margin:0 auto"></div>';
+  h+='<div id="qrView" style="width:110px;height:110px;margin:0 auto"></div>';
   h+='<div style="font-size:10px;color:var(--t3);margin-top:4px">'+inv.id+'</div>';
   h+='</div>';
   h+='</div>';
@@ -2375,9 +2163,9 @@ function pStatement(){
  var selAcc=leaves.find(function(a){return a.id===selId;})||leaves[0];
  var selLabel=selAcc?((selAcc.pid?(db.accounts.find(function(x){return x.id===selAcc.pid;})||{name:''}).name+' / ':'')+selAcc.id+' - '+selAcc.name):'';
  var opts='';
- leaves.forEach(function(a){var p=a.pid?db.accounts.find(function(x){return x.id===a.pid;}):null;opts+='<option value="'+a.id+'"'+(a.id===selId?' selected':'')+'>'+(p?p.name+' / ':'')+a.id+' - '+a.name+'</option>';});
+ leaves.forEach(function(a){var p=a.pid?db.accounts.find(function(x){return x.id===a.pid;}):null;var label=(p?accN(p)+' / ':'')+a.id+' - '+accN(a)+(a.nameAr&&a.nameAr!==a.name?' | '+a.nameAr:'');opts+='<option value="'+a.id+'"'+(a.id===selId?' selected':'')+' data-ar="'+(a.nameAr||'')+'">'+label+'</option>';});
  var searchPicker='<div style="position:relative" id="accPickerWrap">'
-  +'<input id="accSearch" autocomplete="off" placeholder="Search by name or code..." value="'+selLabel+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
+  +'<input id="accSearch" autocomplete="off" placeholder="🔍 بحث برقم أو اسم الحساب (عربي أو إنجليزي)..." value="'+selLabel+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
   +'<div id="accDrop" style="display:none;position:absolute;z-index:100;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);width:100%;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.12);top:100%;left:0">'
   +'<select id="accSel" size="8" style="width:100%;border:none;outline:none;font-size:13px;background:var(--sf);color:var(--tx);padding:4px 0">'+opts+'</select>'
   +'</div></div>';
@@ -2614,13 +2402,46 @@ function wrap(title,body,saveId,saveLabel){
  return '<div class="ov"><div class="modal"><div class="mh">'+title+'</div><div class="fg">'+body+'</div><div class="mft">'+btn_('','mCancel','Cancel')+btn_('bp',saveId,ic('save')+' '+saveLabel)+'</div></div></div>';
 }
 function mAcc(){
- var a=tAcc,isSub=!!a.parentId;
+ var a=tAcc,isSub=!!a.parentId||!a.isMain;
  var mains=db.accounts.filter(function(x){return x.isMain;});
+ // Sub-accounts that have NO journal entries, receipts, or payments
+ var subsNoJE=db.accounts.filter(function(x){
+  if(x.isMain)return false;
+  var usedJ=db.journals.some(function(j){return j.lines&&j.lines.some(function(l){return l.acc===x.id;});});
+  var usedR=(db.receipts||[]).some(function(r){return r.accTo===x.id||r.accFrom===x.id;});
+  var usedP=(db.payments||[]).some(function(r){return r.accTo===x.id||r.accFrom===x.id;});
+  return !usedJ&&!usedR&&!usedP;
+ });
+
+ // Check if current account (edit mode) has no entries → can be promoted
+ var canPromote=false;
+ if(a.editId&&isSub){
+  var usedJ=db.journals.some(function(j){return j.lines&&j.lines.some(function(l){return l.acc===a.editId;});});
+  var usedR=(db.receipts||[]).some(function(r){return r.accTo===a.editId||r.accFrom===a.editId;});
+  var usedP=(db.payments||[]).some(function(r){return r.accTo===a.editId||r.accFrom===a.editId;});
+  canPromote=!usedJ&&!usedR&&!usedP;
+ }
+
  var body='';
- if(!a.isMain)body+=fld('Parent Account *','<select id="a-par"><option value="">Select...</option>'+mains.map(function(m){return '<option value="'+m.id+'"'+(a.parentId===m.id?' selected':'')+'>'+m.id+' - '+accN(m)+'</option>';}).join('')+'</select>');
- body+='<div class="fr2">'+fld('Code *','<input id="a-id" value="'+(a.id||'')+'" placeholder="'+(isSub?'1001':'1000')+'">')+fld('Name (EN) *','<input id="a-name" value="'+(a.name||'')+'" placeholder="e.g. Cash on Hand">')+fld('Name (AR)','<input id="a-namear" value="'+(a.nameAr||'')+'" dir="rtl" placeholder="\u0645\u062b\u0627\u0644: \u0627\u0644\u0646\u0642\u062f\u064a\u0629">')+'</div>';
+
+ // Show promote option when editing a sub-account with no entries
+ if(a.editId&&isSub&&canPromote){
+  body+='<div style="background:var(--amb);border:1px solid var(--am);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">'
+   +'<input type="checkbox" id="a-promote" style="width:16px;height:16px;cursor:pointer" '+(a.promote?'checked':'')+' onchange="tAcc.promote=this.checked;modal=\'acc\';render()">'
+   +'<label for="a-promote" style="cursor:pointer;font-size:13px;font-weight:600;color:var(--am)">تحويل إلى حساب رئيسي (يمكن إضافة فروع تحته)</label>'
+   +'</div>';
+ }
+
+ if(!a.isMain&&!a.promote){
+  var parOpts='<option value="">Select...</option>';
+  parOpts+='<optgroup label="── حسابات رئيسية ──">'+mains.map(function(m){return '<option value="'+m.id+'"'+(a.parentId===m.id?' selected':'')+'>'+m.id+' - '+accN(m)+'</option>';}).join('')+'</optgroup>';
+  if(subsNoJE.length)parOpts+='<optgroup label="── فرعية بدون قيود ──">'+subsNoJE.filter(function(x){return x.id!==a.editId;}).map(function(m){var par=db.accounts.find(function(x){return x.id===m.pid;});return '<option value="'+m.id+'"'+(a.parentId===m.id?' selected':'')+'>'+m.id+' - '+accN(m)+(par?' (تحت: '+accN(par)+')':'')+'</option>';}).join('')+'</optgroup>';
+  body+=fld('Parent Account *','<select id="a-par">'+parOpts+'</select>');
+ }
+
+ body+='<div class="fr2">'+fld('Code *','<input id="a-id" value="'+(a.id||'')+'" placeholder="'+(isSub?'1001':'1000')+'">')+fld('Name (EN) *','<input id="a-name" value="'+(a.name||'')+'" placeholder="e.g. Cash Custody">')+fld('Name (AR)','<input id="a-namear" value="'+(a.nameAr||'')+'" dir="rtl" placeholder="مثال: عهدة نقدية">')+'</div>';
  body+='<div class="fr2">'+fld('Type','<select id="a-type">'+['Asset','Liability','Equity','Revenue','Expense'].map(function(t){return '<option'+(a.type===t?' selected':'')+'>'+t+'</option>';}).join('')+'</select>')+fld('Normal','<select id="a-norm"><option'+(a.normal==='Debit'?' selected':'')+'>Debit</option><option'+(a.normal==='Credit'?' selected':'')+'>Credit</option></select>')+'</div>';
- if(isSub||a.editId)body+=fld('Current Balance','<input id="a-bal" type="number" value="'+(a.bal||0)+'">');
+ if((isSub&&!a.promote)||a.editId)body+=fld('Current Balance','<input id="a-bal" type="number" value="'+(a.bal||0)+'">');
  return wrap(a.editId?'Edit Account':isSub?'New Sub-Account':'New Main Account',body,'mSaveAcc','Save');
 }
 function mJE(){
@@ -2631,7 +2452,11 @@ function mJE(){
   var selAccLabel='';
   if(l.acc){var la=db.accounts.find(function(x){return x.id===l.acc;});var lp=la&&la.pid?db.accounts.find(function(x){return x.id===la.pid;}):null;if(la)selAccLabel=(lp?lp.name+'/':'')+la.id+' '+la.name;}
   var accOpts='<option value="">Select...</option>';
-  leaves.forEach(function(a){var p=a.pid?db.accounts.find(function(x){return x.id===a.pid;}):null;accOpts+='<option value="'+a.id+'"'+(a.id===l.acc?' selected':'')+'>'+(p?p.name+'/':'')+a.id+' '+a.name+'</option>';});
+  leaves.forEach(function(a){
+   var p=a.pid?db.accounts.find(function(x){return x.id===a.pid;}):null;
+   var label=(p?accN(p)+' / ':'')+a.id+' - '+a.name+(a.nameAr&&a.nameAr!==a.name?' | '+a.nameAr:'');
+   accOpts+='<option value="'+a.id+'"'+(a.id===l.acc?' selected':'')+' data-ar="'+(a.nameAr||'')+'">'+label+'</option>';
+  });
   body+='<tr><td style="position:relative;min-width:260px">'
    +'<input class="jeAS" data-i="'+i+'" autocomplete="off" placeholder="Search account..." value="'+selAccLabel+'" style="width:100%;padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
    +'<div class="jeAD" data-i="'+i+'" style="display:none;position:absolute;z-index:300;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);width:340px;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.15);top:100%;left:0">'
@@ -2779,19 +2604,73 @@ window.xAction=function(type){
   aCalc.accDepreciation=(aCalc.accDepreciation||0)+mDep;
   save();render();alert('Depreciation of '+N(mDep)+' posted. JE: '+dJE.id);return;
  }
- if(type==='printCOA'){
-  var html='<table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Level</th><th>Normal</th><th class="tr">Balance</th></tr></thead><tbody>';
+ if(type==='printCOA'||type==='xlsCOA'||type==='wordCOA'){
+  // Build unified COA rows
+  var coaRows=[];
   var types=['Asset','Liability','Equity','Revenue','Expense'];
   types.forEach(function(t){
-   db.accounts.filter(function(a){return a.type===t&&a.isMain;}).forEach(function(m){
+   db.accounts.filter(function(a){return a.type===t&&a.isMain&&!a.pid;}).forEach(function(m){
     var subs=db.accounts.filter(function(s){return s.pid===m.id;});
-    var bal=subs.reduce(function(s,x){return s+x.bal;},0);
-    html+='<tr class="tot"><td>'+m.id+'</td><td><strong>'+m.name+'</strong></td><td>'+t+'</td><td>Main</td><td>'+m.normal+'</td><td class="tr">'+N(bal)+'</td></tr>';
-    subs.forEach(function(s){html+='<tr><td>'+s.id+'</td><td style="padding-right:14pt">&#x2514; '+s.name+'</td><td>'+t+'</td><td>Sub</td><td>'+s.normal+'</td><td class="tr">'+N(s.bal)+'</td></tr>';});
+    var bal=subs.length?subs.reduce(function(s,x){return s+x.bal;},0):m.bal;
+    coaRows.push({id:m.id,name:m.name,nameAr:m.nameAr||'',type:t,level:'Main',normal:m.normal,bal:bal,indent:0,isMain:true});
+    subs.forEach(function(s){
+     var subSubs=db.accounts.filter(function(ss){return ss.pid===s.id;});
+     var sBal=subSubs.length?subSubs.reduce(function(x,y){return x+y.bal;},0):s.bal;
+     coaRows.push({id:s.id,name:s.name,nameAr:s.nameAr||'',type:t,level:subSubs.length?'Sub-Main':'Sub',normal:s.normal,bal:sBal,indent:1,isMain:false});
+     subSubs.forEach(function(ss){
+      coaRows.push({id:ss.id,name:ss.name,nameAr:ss.nameAr||'',type:t,level:'Sub-Sub',normal:ss.normal,bal:ss.bal,indent:2,isMain:false});
+     });
+    });
    });
   });
+
+  if(type==='xlsCOA'){
+   var aoa=[[db.company.name],[db.company.address],[tr('nav_coa')+' - Chart of Accounts','','','Date: '+today()],[],
+    ['Code','Account (EN)','الحساب (AR)','Type','Level','Normal','Balance']];
+   coaRows.forEach(function(r){
+    var prefix=r.indent===2?'    └└ ':r.indent===1?'  └ ':'';
+    aoa.push([r.id,prefix+r.name,r.nameAr,r.type,r.level,r.normal,r.bal]);
+   });
+   exportXLS(aoa,'Chart of Accounts','COA_'+today());
+   return;
+  }
+
+  if(type==='wordCOA'){
+   var rows='<tr style="background:#222;color:#fff"><th style="padding:5pt 8pt;text-align:right">Code</th><th style="padding:5pt 8pt;text-align:right">Account (EN)</th><th style="padding:5pt 8pt;text-align:right">الحساب (AR)</th><th style="padding:5pt 8pt">Type</th><th style="padding:5pt 8pt">Level</th><th style="padding:5pt 8pt">Normal</th><th style="padding:5pt 8pt;text-align:right">Balance</th></tr>';
+   coaRows.forEach(function(r){
+    var pad=r.indent===2?'padding-right:28pt':r.indent===1?'padding-right:14pt':'';
+    var prefix=r.indent===2?'└└ ':r.indent===1?'└ ':'';
+    var bg=r.isMain?'background:#f0f0f0;font-weight:bold':'';
+    rows+='<tr style="'+bg+'"><td style="padding:4pt 8pt;border-bottom:1pt solid #ddd">'+r.id+'</td><td style="padding:4pt 8pt;border-bottom:1pt solid #ddd;'+pad+'">'+prefix+r.name+'</td><td dir="rtl" style="padding:4pt 8pt;border-bottom:1pt solid #ddd;text-align:right">'+r.nameAr+'</td><td style="padding:4pt 8pt;border-bottom:1pt solid #ddd">'+r.type+'</td><td style="padding:4pt 8pt;border-bottom:1pt solid #ddd">'+r.level+'</td><td style="padding:4pt 8pt;border-bottom:1pt solid #ddd">'+r.normal+'</td><td style="padding:4pt 8pt;border-bottom:1pt solid #ddd;text-align:right">'+N(r.bal)+'</td></tr>';
+   });
+   var wordHtml='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><title>Chart of Accounts</title>'
+    +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom></w:WordDocument></xml><![endif]-->'
+    +'<style>body{font-family:Arial,sans-serif;font-size:10pt;direction:rtl}h2{font-size:14pt}p{font-size:9pt;color:#666}table{width:100%;border-collapse:collapse}th{background:#222;color:#fff;padding:5pt 8pt;font-size:9pt}td{font-size:9pt}</style></head><body>'
+    +'<h2>'+db.company.name+'</h2>'
+    +'<p>'+db.company.address+' | VAT: '+db.company.vatNo+' | CR: '+db.company.cr+'</p>'
+    +'<p>دليل الحسابات - Chart of Accounts | '+today()+'</p>'
+    +'<table><tbody>'+rows+'</tbody></table>'
+    +'</body></html>';
+   var blob=new Blob(['\ufeff'+wordHtml],{type:'application/msword;charset=utf-8'});
+   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='COA_'+today()+'.doc';a.click();
+   setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+   return;
+  }
+
+  // PDF print
+  var html='<table><thead><tr><th>Code</th><th>Account (EN)</th><th>الحساب (AR)</th><th>Type</th><th>Level</th><th>Normal</th><th class="tr">Balance</th></tr></thead><tbody>';
+  coaRows.forEach(function(r){
+   var pad=r.indent===2?'padding-right:28pt':r.indent===1?'padding-right:14pt':'';
+   var prefix=r.indent===2?'└└ ':r.indent===1?'└ ':'';
+   var cls=r.isMain?'tot':'';
+   html+='<tr class="'+cls+'"><td>'+r.id+'</td>'
+    +'<td style="'+pad+'">'+prefix+(r.isMain?'<strong>'+r.name+'</strong>':r.name)+'</td>'
+    +'<td dir="rtl" style="text-align:right;'+pad+'">'+(r.isMain?'<strong>'+r.nameAr+'</strong>':r.nameAr)+'</td>'
+    +'<td>'+r.type+'</td><td>'+r.level+'</td><td>'+r.normal+'</td>'
+    +'<td class="tr">'+N(r.bal)+'</td></tr>';
+  });
   html+='</tbody></table>';
-  printHTML('Chart of Accounts',html);
+  printHTML('دليل الحسابات - Chart of Accounts',html);
   return;
  } else
  if(type==='printJE'){
@@ -3089,8 +2968,33 @@ function bindEvents(){
   var isSub=!tAcc.isMain;
   if(!id||!name){alert('Fill code and name.');return;}
   if(isSub&&!parentId&&!tAcc.editId){alert('Please select a parent account.');return;}
-  if(tAcc.editId){var a=db.accounts.find(function(x){return x.id===tAcc.editId;});if(a)Object.assign(a,{id:id,name:name,nameAr:nameAr,type:type,normal:norm,bal:bal,pid:parentId||a.pid||undefined,isMain:!isSub});}
-  else{if(db.accounts.find(function(a){return a.id===id;})){alert('Code exists.');return;}if(isSub)db.accounts.push({id:id,name:name,type:type,bal:bal,normal:norm,pid:parentId});else{db.accounts.push({id:id,name:name,type:type,bal:0,normal:norm,isMain:true});db.exp[id]=true;}}
+  var promote=!!(document.getElementById('a-promote')&&document.getElementById('a-promote').checked);
+  if(tAcc.editId){
+   var a=db.accounts.find(function(x){return x.id===tAcc.editId;});
+   if(a){
+    Object.assign(a,{id:id,name:name,nameAr:nameAr,type:type,normal:norm,bal:bal});
+    if(promote){
+     // Promote sub to main — keep pid so it still shows under its parent group
+     a.isMain=true;
+     db.exp[id]=true;
+    } else {
+     a.pid=parentId||a.pid||undefined;
+     a.isMain=false;
+    }
+   }
+  }
+  else{
+   if(db.accounts.find(function(a){return a.id===id;})){alert('Code exists.');return;}
+   if(isSub){
+    db.accounts.push({id:id,name:name,nameAr:nameAr,type:type,bal:bal,normal:norm,pid:parentId});
+    // Promote parent sub to isMain if it was a sub with no entries
+    var parentAcc=db.accounts.find(function(x){return x.id===parentId;});
+    if(parentAcc&&!parentAcc.isMain){parentAcc.isMain=true;db.exp[parentAcc.id]=true;}
+   } else {
+    db.accounts.push({id:id,name:name,nameAr:nameAr,type:type,bal:0,normal:norm,isMain:true});
+    db.exp[id]=true;
+   }
+  }
   modal=null;save();render();
  });
  // Journal
@@ -3177,7 +3081,11 @@ function bindEvents(){
   if(sel){
    var opts=sel.querySelectorAll('option');
    opts.forEach(function(o){
-    o.style.display=(!q||o.text.toLowerCase().includes(q)||o.value.toLowerCase().includes(q))?'':'none';
+    var code=o.value.toLowerCase();
+    var label=o.text.toLowerCase();
+    var ar=(o.dataset&&o.dataset.ar)||'';
+    var match=!q||code.indexOf(q)!==-1||label.indexOf(q)!==-1||ar.toLowerCase().indexOf(q)!==-1;
+    o.style.display=match?'':'none';
    });
   }
  });
@@ -3253,10 +3161,22 @@ function bindEvents(){
    +'.sig{border-top:1pt solid #222;padding-top:5pt;text-align:center;font-size:9pt;color:#555}'
    +'.no-print{display:none}@media print{.no-print{display:none}}';
 
-  // Build QR Code for print — ZATCA compliant TLV using embedded QRJS
-  var zatcaB64=buildZATCATLV(db.company.name||'',db.company.vatNo||'',inv.date+'T00:00:00Z',sub+tax,tax);
-  var bcImg='';
-  try{bcImg=QRJS.encode(zatcaB64,4);}catch(e){bcImg='';}
+  // Build QR Code — ZATCA TLV then embed SVG directly in HTML
+  var zatcaB64=buildZATCATLV(
+   db.company.name||'',
+   db.company.vatNo||'',
+   inv.date+'T00:00:00Z',
+   sub+tax,
+   tax
+  );
+  var bcSVG='';
+  try{
+   var qrDataUrl=QRJS.encode(zatcaB64,5);
+   // Extract SVG from data URL and embed directly
+   if(qrDataUrl&&qrDataUrl.indexOf('data:image/svg+xml')===0){
+    bcSVG=decodeURIComponent(qrDataUrl.replace('data:image/svg+xml;charset=utf-8,',''));
+   }
+  }catch(e){bcSVG='';}
   var logoHtml=db.company.logo?'<img src="'+db.company.logo+'" style="height:55pt;max-width:130pt;object-fit:contain">':'';
   var rows=inv.items.map(function(i){
    var va=i.qty*i.rate*i.vat/100;
@@ -3282,8 +3202,12 @@ function bindEvents(){
    +(inv.clientAddr?'<div class="client-info">Address: '+inv.clientAddr+'</div>':'')
    +(inv.clientPhone?'<div class="client-info">Tel: '+inv.clientPhone+'</div>':'')
    +'</div>'
-   +'<div class="box bc-box"><div class="box-title" style="text-align:center">QR / Barcode</div>'
-   +(bcImg?'<img src="'+bcImg+'" style="width:130pt;height:130pt;display:block;margin:0 auto">':'<div style="width:130pt;height:130pt;border:1pt solid #ccc;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;word-break:break-all;padding:4pt">'+zatcaB64.slice(0,40)+'...</div>')
+   +'<div class="box bc-box"><div class="box-title" style="text-align:center">QR Code</div>'
+   +(bcSVG
+    ?'<div style="width:130pt;height:130pt;display:block;margin:4pt auto">'+bcSVG+'</div>'
+    :'<div style="width:130pt;height:130pt;border:1pt solid #ccc;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#aaa;text-align:center">QR<br>'+inv.id+'</div>')
+   +'<div style="font-size:7pt;color:#888;text-align:center;margin-top:3pt">'+inv.id+'</div>'
+   +'</div>'
    +'<div style="font-size:8pt;color:#888;text-align:center;margin-top:3pt">'+inv.id+'</div>'
    +'</div>'
    +'</div>'
@@ -3385,17 +3309,18 @@ function bindEvents(){
   if(d)d.style.display='block';
  });
  on1('accSearch','input',function(){
-  var q=(this.value||document.getElementById('accSearch').value||'').toLowerCase().trim();
+  var q=(document.getElementById('accSearch').value||'').toLowerCase().trim();
   var sel=document.getElementById('accSel');
   if(!sel)return;
   var d=document.getElementById('accDrop');
   if(d)d.style.display='block';
   var opts=sel.querySelectorAll('option');
-  var first=null;
   opts.forEach(function(o){
-   var match=!q||o.text.toLowerCase().includes(q)||o.value.toLowerCase().includes(q);
+   var code=o.value.toLowerCase();
+   var label=o.text.toLowerCase();
+   var ar=(o.dataset&&o.dataset.ar)||'';
+   var match=!q||code.indexOf(q)!==-1||label.indexOf(q)!==-1||ar.toLowerCase().indexOf(q)!==-1;
    o.style.display=match?'':'none';
-   if(match&&!first)first=o;
   });
  });
  on1('accSel','change',function(){
@@ -3647,36 +3572,67 @@ function bindEvents(){
  on('[data-edititem]','click',function(el){var it=(db.items||[]).find(function(x){return x.id===el.dataset.edititem;});if(it){tItem=Object.assign({},it,{editId:it.id});modal='item';render();}});
  on('[data-delitem]','click',function(el){if(confirm('Delete item?')){db.items=(db.items||[]).filter(function(x){return x.id!==el.dataset.delitem;});save();render();}});
  
- // Account search in Item modal
+ // ── Universal Account Search Handler ──────────────────────
+ // Works for all accSearchFld widgets (items, receipts, payments, etc.)
+ on('.itAccSearch','focus',function(el){
+  var drop=document.getElementById(el.id+'-drop');
+  if(drop){drop.style.display='block';}
+ });
  on('.itAccSearch','input',function(el){
   var q=el.value.toLowerCase().trim();
-  var dropId=el.id+'-drop';
-  var drop=document.getElementById(dropId);
+  var drop=document.getElementById(el.id+'-drop');
+  var sel=document.getElementById(el.id+'-sel');
   if(!drop)return;
-  if(!q){drop.style.display='none';return;}
-  var matches=db.accounts.filter(function(a){
-   return !a.isMain&&(a.id.toLowerCase().indexOf(q)!==-1||a.name.toLowerCase().indexOf(q)!==-1||(a.nameAr&&a.nameAr.indexOf(q)!==-1));
-  }).slice(0,15);
-  if(!matches.length){drop.style.display='none';return;}
-  drop.innerHTML=matches.map(function(a){
-   return '<div data-accpick-id="'+a.id+'" data-accpick-for="'+el.id+'"'
-    +' style="padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--bd)"'
-    +' class="itAccItem">'
-    +'<span style="background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:6px">'+a.id+'</span>'
-    +accN(a)
-    +'</div>';
-  }).join('');
   drop.style.display='block';
+  if(sel){
+   // Filter options by code OR name (EN or AR)
+   var opts=sel.querySelectorAll('option');
+   var first=null;
+   opts.forEach(function(o){
+    var code=(o.dataset.code||o.value||'').toLowerCase();
+    var ar=(o.dataset.ar||'').toLowerCase();
+    var label=o.text.toLowerCase();
+    var match=!q||code.indexOf(q)!==-1||label.indexOf(q)!==-1||ar.indexOf(q)!==-1;
+    o.style.display=match?'':'none';
+    if(match&&!first)first=o;
+   });
+  }
  });
- on('[data-accpick-id]','click',function(el){
-  var inputId=el.dataset.accpickFor;
-  var accId=el.dataset.accpickId;
-  var input=document.getElementById(inputId);
-  var hiddenInput=document.getElementById(inputId+'-id');
-  var acc=db.accounts.find(function(a){return a.id===accId;});
-  if(input&&acc)input.value=acc.id+' - '+accN(acc);
-  if(hiddenInput)hiddenInput.value=accId;
-  var drop=document.getElementById(inputId+'-drop');
+ on('.itAccSearch','blur',function(el){
+  setTimeout(function(){
+   var drop=document.getElementById(el.id+'-drop');
+   if(drop)drop.style.display='none';
+  },200);
+ });
+ on('.itAccSearch','keydown',function(el,e){
+  var sel=document.getElementById(el.id+'-sel');
+  if(!sel)return;
+  if(e.key==='ArrowDown'){e.preventDefault();sel.focus();}
+  if(e.key==='Enter'){
+   e.preventDefault();
+   var opts=Array.from(sel.querySelectorAll('option')).filter(function(o){return o.style.display!=='none';});
+   if(opts.length===1){
+    var a=db.accounts.find(function(x){return x.id===opts[0].value;});
+    if(a){el.value=a.id+' - '+accN(a);}
+    var hid=document.getElementById(el.id+'-id');
+    if(hid)hid.value=opts[0].value;
+    var drop=document.getElementById(el.id+'-drop');
+    if(drop)drop.style.display='none';
+   }
+  }
+ });
+ // Select from dropdown
+ on('.itAccSearch ~ input[type=hidden] ~ div select, [id$="-sel"]','change',function(el){
+  var baseId=el.id.replace(/-sel$/,'');
+  var inp=document.getElementById(baseId);
+  var hid=document.getElementById(baseId+'-id');
+  var drop=document.getElementById(baseId+'-drop');
+  var opt=el.options[el.selectedIndex];
+  if(inp&&opt){
+   var a=db.accounts.find(function(x){return x.id===opt.value;});
+   inp.value=a?(a.id+' - '+accN(a)):opt.text;
+  }
+  if(hid&&opt)hid.value=opt.value;
   if(drop)drop.style.display='none';
  });
  on1('mSaveItem','click',function(){
@@ -3883,17 +3839,6 @@ function bindEvents(){
  on1('permNone','click',function(){document.querySelectorAll('.permCb').forEach(function(cb){cb.checked=false;});});
  // Add logout button handler
  on1('btnLogout','click',function(){currentUser=null;clearSession();render();});
- on1('btnSwitchCo','click',function(){
-  // Stop live listener for current company
-  if(HAS_CLOUD&&fbRef){try{fbRef.off();}catch(e){}}
-  fbRef=null;
-  currentUser=null;
-  clearSession();
-  currentCompanyId=null;
-  appState='selectCompany';
-  try{localStorage.removeItem('ap7_active_company');}catch(e){}
-  renderCompanySelect();
- });
  on1('btnSaveSettings','click',function(){
   var name=((document.getElementById('s-name')||{}).value||'').trim();
   if(!name){alert('Company name required.');return;}
@@ -3994,57 +3939,29 @@ function jeHint(){
 }
 
 // Show loading state immediately
-document.getElementById('app').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;font-family:Arial,sans-serif;color:#68665e"><div style="text-align:center"><div style="font-size:24px;margin-bottom:10px">⏳</div><div>Loading AccountPro...</div><div style="font-size:11px;margin-top:6px;color:#9a978f">Multi-Company Edition</div></div></div>';
+document.getElementById('app').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;font-family:Arial,sans-serif;color:#68665e"><div style="text-align:center"><div style="font-size:24px;margin-bottom:10px">⏳</div><div>Loading AccountPro...</div><div style="font-size:11px;margin-top:6px;color:#9a978f">Connecting to cloud sync</div></div></div>';
 
 var skipNextRemote=false;
 document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
 document.documentElement.setAttribute('lang',lang);
-
-// STARTUP: Load companies list first, then decide what to show
-loadCompaniesListCloud().then(function(list){
- companiesList=list||[];
-
- // Migrate old single-company data (ap7) to new multi-company format
- (function migrateLegacy(){
-  try{
-   var old=localStorage.getItem('ap7');
-   if(!old)return;
-   var oldData=JSON.parse(old);
-   if(!oldData||!Array.isArray(oldData.accounts))return;
-   // Check if already migrated
-   if(companiesList.length>0)return;
-   // Create company from old data
-   var legacyId='co_legacy_'+Date.now().toString(36);
-   var coName=(oldData.company&&oldData.company.name)||'الشركة الرئيسية';
-   companiesList=[{id:legacyId,name:coName,address:(oldData.company&&oldData.company.address)||'',cr:(oldData.company&&oldData.company.cr)||'',vatNo:(oldData.company&&oldData.company.vatNo)||'',createdAt:today()}];
-   saveCompaniesListCloud(companiesList);
-   // Copy old data to new key
-   localStorage.setItem(lsCompanyKey(legacyId),old);
-   // Upload to Firebase if available
-   if(HAS_CLOUD&&fbRootRef){
-    fbRootRef.child('companies/'+legacyId).set(oldData).catch(function(){});
-   }
-   console.log('Migrated legacy data to company: '+legacyId);
-  }catch(e){console.warn('Legacy migration error:',e);}
- })();
-
- // Try to restore last active company
- var lastCoId=getActiveCompanyId();
- var lastCo=lastCoId&&companiesList.find(function(c){return c.id===lastCoId;});
-
- if(lastCo&&companiesList.length>0){
-  // Auto-load last company
-  selectCompanyAndLoad(lastCo.id);
- } else if(companiesList.length===1){
-  // Only one company → go directly
-  selectCompanyAndLoad(companiesList[0].id);
- } else {
-  // Show company selection screen
-  appState='selectCompany';
-  renderCompanySelect();
+loadDB().then(function(loaded){
+ db=loaded;
+ render();
+ // Listen for remote changes (sync across devices)
+ if(HAS_CLOUD&&fbRef){
+  fbRef.on('value',function(snap){
+   var val=snap.val();
+   if(!val||!Array.isArray(val.accounts))return;
+   if(skipNextRemote){skipNextRemote=false;return;}
+   db=normalizeDB(val);
+   try{localStorage.setItem('ap7',JSON.stringify(db));}catch(e){}
+   restoreSession();render();
+   var el=document.getElementById('sv');
+   if(el)el.textContent='☁️ Updated from cloud '+new Date().toLocaleTimeString();
+  });
  }
 }).catch(function(e){
- document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load: '+e.message+'</div>';
+ document.getElementById('app').innerHTML='<div style="padding:30px;color:#b91c1c;font-family:Arial">Failed to load data: '+e.message+'</div>';
 });
 })();
 
