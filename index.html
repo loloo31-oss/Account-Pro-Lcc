@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AccountPro</title>
+<title>Mizan IQ — ميزان IQ</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#f7f6f3;--sf:#fff;--bd:#e4e2db;--bd2:#c5c2b8;--tx:#1a1916;--t2:#68665e;--t3:#9a978f;
@@ -155,7 +155,8 @@ var I18N={
  lang_name:{ar:'EN',en:'\u0639\u0631\u0628\u064a'}
 };
 function tr(key){var e=I18N[key];if(!e)return key;return e[lang]||e.ar||key;}
-function setLang(l){lang=l;try{localStorage.setItem('ap-lang',l);}catch(e){}document.documentElement.setAttribute('dir',l==='ar'?'rtl':'ltr');document.documentElement.setAttribute('lang',l);render();}
+function setLang(l){lang=l;window.lang=l;try{localStorage.setItem('ap-lang',l);}catch(e){}document.documentElement.setAttribute('dir',l==='ar'?'rtl':'ltr');document.documentElement.setAttribute('lang',l);render();}
+window.setLang=setLang;
 
 
 // DATA
@@ -235,7 +236,7 @@ var fAcc='',fFrom='',fTo='',stimer=null,lastSave=null;
 var tAcc={},tJE={},tInv={},tCus={},tSup={},tRcpt={},tPymt={},tCC={},tUser={};
 var tFAEdit={},tFA=null,tLocEdit={};
 var currentUser=null;
-var rptFrom='',rptTo='',rptLevel='all',rptShowCodes=false; // report filters
+var rptFrom='',rptTo='',rptLevel='all',rptShowCodes=false,rptLoaded=false; // report filters
 
 // HELPERS
 function N(n){return Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -606,9 +607,9 @@ function doLogout(){currentUser=null;clearSession();render();}
 function buildLogin(){
  var isAr=lang==='ar';
  var coName=db&&db.company?db.company.name:'AccountPro';
- var logoSVG='<svg width="44" height="44" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#185FA5"/><rect x="10" y="14" width="28" height="4" rx="2" fill="white"/><rect x="10" y="22" width="22" height="4" rx="2" fill="rgba(255,255,255,0.7)"/><rect x="10" y="30" width="16" height="4" rx="2" fill="rgba(255,255,255,0.5)"/><polyline points="34,32 34,18" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/><polyline points="30,22 34,18 38,22" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
- var brandName=isAr?'<span style="color:#185FA5;font-weight:800">أكاونت</span><span style="color:#378ADD;font-weight:300">برو</span>':'<span style="color:#185FA5;font-weight:800">Account</span><span style="color:#378ADD;font-weight:300">Pro</span>';
- var subtitle=isAr?'برنامج المحاسبة الاحترافي':'Professional Accounting Software';
+ var logoSVG='<svg width="56" height="56" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" rx="18" fill="#185FA5"/><rect x="38" y="14" width="4" height="52" rx="2" fill="white"/><rect x="10" y="14" width="60" height="4" rx="2" fill="white"/><line x1="18" y1="18" x2="18" y2="46" stroke="white" stroke-width="2"/><line x1="62" y1="18" x2="62" y2="36" stroke="#FFD700" stroke-width="2"/><rect x="8" y="46" width="20" height="5" rx="2.5" fill="rgba(255,255,255,0.85)"/><rect x="52" y="36" width="20" height="5" rx="2.5" fill="#FFD700"/><rect x="11" y="34" width="4" height="12" rx="1" fill="rgba(255,255,255,0.5)"/><rect x="16" y="29" width="4" height="17" rx="1" fill="rgba(255,255,255,0.75)"/><rect x="21" y="24" width="4" height="22" rx="1" fill="white"/><circle cx="57" cy="26" r="3.5" fill="#FFD700"/><circle cx="66" cy="26" r="3.5" fill="#FFD700"/><circle cx="61" cy="18" r="3.5" fill="#FFD700"/><line x1="57" y1="26" x2="66" y2="26" stroke="#FFD700" stroke-width="1.5"/><line x1="57" y1="26" x2="61" y2="18" stroke="#FFD700" stroke-width="1.5"/><line x1="66" y1="26" x2="61" y2="18" stroke="#FFD700" stroke-width="1.5"/><polyline points="24,20 28,13 32,20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ var brandName=isAr?'<span style="color:#185FA5;font-weight:800">ميزان </span><span style="color:#B8860B;font-weight:900">IQ</span>':'<span style="color:#185FA5;font-weight:800">Mizan</span><span style="color:#B8860B;font-weight:900"> IQ</span>';
+ var subtitle=isAr?'الذكاء الذي يفهم أرقامك':'The Intelligence That Understands Your Numbers';
  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'
   +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:400px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
   +'<div style="text-align:center;margin-bottom:28px">'
@@ -800,13 +801,19 @@ function render(){
  if(!currentUser){el.innerHTML=buildLogin();setTimeout(function(){var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');if(!bEl)return;function doLogin(){var uv=((uEl&&uEl.value)||'').trim();var pv=((pEl&&pEl.value)||'').trim();var usr=db.users.find(function(x){return x.username===uv&&x.active;});if(!usr||usr.passwordHash!==hashPwd(pv)){var e2=document.getElementById('loginErr');if(e2)e2.style.display='block';return;}currentUser=usr;saveSession(usr);render();}bEl.addEventListener('click',doLogin);if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});var rEl=document.getElementById('btnResetAdmin');if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});},50);return;} try{el.innerHTML=buildLayout();bindEvents();}
  catch(e){el.innerHTML='<div style="color:red;padding:20px;background:#fff1f0;margin:20px;border-radius:8px"><b>Error: </b>'+e.message+'<br><small>'+(e.stack||'').replace(/</g,'&lt;').slice(0,400)+'</small></div>';}
 }
+// Expose functions globally for inline onclick handlers
+window.render=render;
+window.clearSession=clearSession;
+window.doLogout=function(){currentUser=null;clearSession();render();};
+window.doSwitchCo=function(){currentCompanyId=null;appState='selectCompany';render();};
+
 
 function buildLogin(){
  var isAr=lang==='ar';
  var coName=db&&db.company?db.company.name:'AccountPro';
- var logoSVG='<svg width="44" height="44" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#185FA5"/><rect x="10" y="14" width="28" height="4" rx="2" fill="white"/><rect x="10" y="22" width="22" height="4" rx="2" fill="rgba(255,255,255,0.7)"/><rect x="10" y="30" width="16" height="4" rx="2" fill="rgba(255,255,255,0.5)"/><polyline points="34,32 34,18" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/><polyline points="30,22 34,18 38,22" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
- var brandName=isAr?'<span style="color:#185FA5;font-weight:800">أكاونت</span><span style="color:#378ADD;font-weight:300">برو</span>':'<span style="color:#185FA5;font-weight:800">Account</span><span style="color:#378ADD;font-weight:300">Pro</span>';
- var subtitle=isAr?'برنامج المحاسبة الاحترافي':'Professional Accounting Software';
+ var logoSVG='<svg width="52" height="52" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" rx="18" fill="#185FA5"/><rect x="38" y="16" width="4" height="48" rx="2" fill="white"/><rect x="14" y="16" width="52" height="4" rx="2" fill="white"/><line x1="22" y1="20" x2="22" y2="44" stroke="white" stroke-width="2"/><line x1="58" y1="20" x2="58" y2="38" stroke="white" stroke-width="2"/><rect x="12" y="44" width="20" height="4" rx="2" fill="rgba(255,255,255,0.8)"/><rect x="48" y="38" width="20" height="4" rx="2" fill="white"/><rect x="51" y="27" width="4" height="11" rx="1" fill="rgba(255,255,255,0.6)"/><rect x="56" y="22" width="4" height="16" rx="1" fill="rgba(255,255,255,0.8)"/><rect x="61" y="17" width="4" height="21" rx="1" fill="white"/><polyline points="62,13 66,8 70,13" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ var brandName=isAr?'<span style="color:#185FA5;font-weight:800">ميزان </span><span style="color:#B8860B;font-weight:900">IQ</span>':'<span style="color:#185FA5;font-weight:800">Mizan</span><span style="color:#B8860B;font-weight:900"> IQ</span>';
+ var subtitle=isAr?'الذكاء الذي يفهم أرقامك':'The Intelligence That Understands Your Numbers';
  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'
   +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:400px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
   +'<div style="text-align:center;margin-bottom:28px">'
@@ -832,6 +839,12 @@ function buildLayout(){
  var co=db.company;
  var navData=[
   {k:'dashboard',i:'home',l:lang==='ar'?'لوحة التحكم':'Dashboard'},
+  {sec:lang==='ar'?'🤖 الذكاء الاصطناعي':'🤖 AI Assistant'},
+  {k:'ai_settings',i:'set',l:lang==='ar'?'إعدادات الذكاء الاصطناعي':'AI Settings'},
+  {k:'ai_bank',i:'scale',l:lang==='ar'?'التسوية البنكية':'Bank Reconciliation'},
+  {k:'ai_analysis',i:'trend',l:lang==='ar'?'التحليل المالي':'Financial Analysis'},
+  {k:'ai_cashflow',i:'rcpt',l:lang==='ar'?'التدفقات النقدية':'Cash Flow'},
+  {k:'ai_forecast',i:'book',l:lang==='ar'?'التنبؤ المالي':'Financial Forecast'},
   {sec:lang==='ar'?'🎓 التدريب المحاسبي':'🎓 Training'},
   {k:'training',i:'book',l:lang==='ar'?'وحدة التدريب':'Training Module'},
   {sec:tr('sec_general')},
@@ -873,11 +886,11 @@ function buildLayout(){
   if(n.sec)nav+='<div class="ns">'+n.sec+'</div>';
   else nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+n.k+'">'+ic(n.i)+' '+n.l+'</div>';
  });
- var pages={dashboard:pDashboard,training:pTraining,coa:pCOA,items:pItems,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
+ var pages={dashboard:pDashboard,training:pTraining,ai_settings:pAISettings,ai_bank:pAIBank,ai_analysis:pAIAnalysis,ai_cashflow:pAICashFlow,ai_forecast:pAIForecast,coa:pCOA,items:pItems,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
  if(view==='fixedassets'&&tFA){return pAssetDetail();}
  var fn=pages[view]||pDashboard;
  var isAr=lang==='ar';
- var sbLogoSVG='<svg width="32" height="32" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="10" fill="rgba(255,255,255,0.2)"/><rect x="10" y="14" width="28" height="4" rx="2" fill="white"/><rect x="10" y="22" width="22" height="4" rx="2" fill="rgba(255,255,255,0.7)"/><rect x="10" y="30" width="16" height="4" rx="2" fill="rgba(255,255,255,0.5)"/><polyline points="34,32 34,18" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/><polyline points="30,22 34,18 38,22" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ var sbLogoSVG='<svg width="38" height="38" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" rx="16" fill="rgba(255,255,255,0.15)"/><rect x="38" y="16" width="4" height="50" rx="2" fill="white"/><rect x="12" y="16" width="56" height="4" rx="2" fill="white"/><line x1="20" y1="20" x2="20" y2="46" stroke="white" stroke-width="2"/><line x1="60" y1="20" x2="60" y2="36" stroke="#FFD700" stroke-width="2"/><rect x="10" y="46" width="20" height="4" rx="2" fill="rgba(255,255,255,0.85)"/><rect x="50" y="36" width="20" height="4" rx="2" fill="#FFD700"/><rect x="13" y="36" width="4" height="10" rx="1" fill="rgba(255,255,255,0.5)"/><rect x="18" y="32" width="4" height="14" rx="1" fill="rgba(255,255,255,0.7)"/><rect x="23" y="28" width="4" height="18" rx="1" fill="white"/><circle cx="55" cy="28" r="3" fill="#FFD700"/><circle cx="63" cy="28" r="3" fill="#FFD700"/><circle cx="59" cy="22" r="3" fill="#FFD700"/><line x1="55" y1="28" x2="63" y2="28" stroke="#FFD700" stroke-width="1.5"/><line x1="55" y1="28" x2="59" y2="22" stroke="#FFD700" stroke-width="1.5"/><line x1="63" y1="28" x2="59" y2="22" stroke="#FFD700" stroke-width="1.5"/><polyline points="26,24 30,18 34,24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
  var sbBrand=isAr?'<span style="font-weight:800">\u0623\u0643\u0627\u0648\u0646\u062a</span><span style="font-weight:300;opacity:.8">\u0628\u0631\u0648</span>':'<span style="font-weight:800">Account</span><span style="font-weight:300;opacity:.8">Pro</span>';
  return '<div class="sb"><div class="logo">'
   +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+sbLogoSVG
@@ -891,15 +904,15 @@ function buildLayout(){
  +'<div style="background:rgba(255,255,255,0.1);border-radius:var(--r);padding:6px 10px;font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px">'
  +'<div style="overflow:hidden"><div style="font-weight:700;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">&#127970; '+(db.company.name||'')+'</div>'
  +'<div style="color:rgba(255,255,255,0.55);font-size:10px">'+(currentUser?currentUser.name:'')+'</div></div>'
- +'<button class="btn bsm" id="btnSwitchCo" title="تبديل الشركة" style="flex-shrink:0;font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:white">⇄</button>'
+ +'<button class="btn bsm" data-action="switchCo" title="تبديل الشركة" style="flex-shrink:0;font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:white">⇄</button>'
  +'</div>'
  +'<div style="display:flex;gap:5px">'
  +'<button class="btn bsm" id="expD" style="flex:1;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+ic('dn')+' Export</button>'
  +'<button class="btn bsm" id="impD" style="flex:1;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+ic('up_')+' Import</button>'
  +'<input type="file" id="impF" accept=".json" style="display:none"></div>'
  +'<div style="display:flex;gap:5px">'
- +'<button class="btn bsm" id="langToggle" style="flex:1;justify-content:center;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+(lang==='ar'?'🌐 English':'🌐 عربي')+'</button>'
- +'<button class="btn bsm" id="btnLogout" style="flex:1;justify-content:center;background:rgba(220,38,38,0.3);border-color:rgba(220,38,38,0.5);color:white">'+(lang==='ar'?'خروج':'Logout')+'</button>'
+ +'<button class="btn bsm" data-action="toggleLang" style="flex:1;justify-content:center;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.85)">'+(lang==='ar'?'🌐 English':'🌐 عربي')+'</button>'
+ +'<button class="btn bsm" data-action="logout" style="flex:1;justify-content:center;background:rgba(220,38,38,0.3);border-color:rgba(220,38,38,0.5);color:white">'+(lang==='ar'?'خروج':'Logout')+'</button>'
  +'</div></div>'
   +'</div><div class="main">'+fn()+'</div>'
   +(modal?buildModal():'');
@@ -2077,7 +2090,369 @@ function pTrainingScenario(sc,isAr){
 }
 
 
-// ── DASHBOARD ────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// AI MODULE — وحدة الذكاء الاصطناعي
+// ══════════════════════════════════════════════════════════════
+
+// AI State
+var aiState={
+ provider:'gemini', // gemini | claude | openai
+ apiKey:'',
+ model:'',
+ ready:false
+};
+
+// Load saved AI settings
+(function(){
+ try{
+  var s=localStorage.getItem('ap_ai_settings');
+  if(s){var d=JSON.parse(s);Object.assign(aiState,d);aiState.ready=!!(aiState.apiKey&&aiState.provider);}
+ }catch(e){}
+})();
+
+function saveAISettings(){
+ try{localStorage.setItem('ap_ai_settings',JSON.stringify({provider:aiState.provider,apiKey:aiState.apiKey,model:aiState.model}));}catch(e){}
+}
+
+// Universal AI call function
+async function callAI(prompt,systemPrompt){
+ if(!aiState.apiKey)throw new Error('No API Key configured');
+ var isArLang=typeof lang!=='undefined'&&lang==='ar';
+ var sys=systemPrompt||(isArLang?
+  'أنت خبير محاسبي ومحلل مالي متخصص. يجب أن تكون جميع إجاباتك باللغة العربية الفصحى فقط. كن دقيقاً ومهنياً. استخدم المصطلحات المحاسبية العربية الصحيحة.':
+  'You are an expert financial accountant and analyst. Respond entirely in English. Be precise and professional. Use standard accounting terminology.'
+ );
+
+ if(aiState.provider==='gemini'){
+  var model=aiState.model||'gemini-1.5-flash';
+  // Remove any extra spaces
+  model=model.trim();
+  var url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+aiState.apiKey;
+  var body={contents:[{role:'user',parts:[{text:sys+'\n\n'+prompt}]}],generationConfig:{temperature:0.3,maxOutputTokens:4096}};
+  var res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok){
+   var errData=await res.json().catch(function(){return {};});
+   throw new Error('Gemini API error: '+res.status+' — '+(errData&&errData.error&&errData.error.message||''));
+  }
+  var data=await res.json();
+  if(!data.candidates||!data.candidates[0])throw new Error('No response from Gemini');
+  return data.candidates[0].content.parts[0].text;
+
+ } else if(aiState.provider==='claude'){
+  var url2='https://api.anthropic.com/v1/messages';
+  var body2={model:aiState.model||'claude-sonnet-4-6',max_tokens:4096,system:sys,messages:[{role:'user',content:prompt}]};
+  var res2=await fetch(url2,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':aiState.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify(body2)});
+  if(!res2.ok)throw new Error('Claude API error: '+res2.status);
+  var data2=await res2.json();
+  return data2.content[0].text;
+
+ } else if(aiState.provider==='openai'){
+  var url3='https://api.openai.com/v1/chat/completions';
+  var body3={model:aiState.model||'gpt-4o-mini',max_tokens:4096,messages:[{role:'system',content:sys},{role:'user',content:prompt}]};
+  var res3=await fetch(url3,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+aiState.apiKey},body:JSON.stringify(body3)});
+  if(!res3.ok)throw new Error('OpenAI API error: '+res3.status);
+  var data3=await res3.json();
+  return data3.choices[0].message.content;
+ }
+ throw new Error('Unknown provider');
+}
+
+// ── AI Settings Page ─────────────────────────────────────────
+function pAISettings(){
+ var isAr=lang==='ar';
+ var h=tb(isAr?'⚙️ إعدادات الذكاء الاصطناعي':'⚙️ AI Settings','');
+ h+='<div class="pg">';
+
+ // Status banner
+ h+='<div style="background:'+(aiState.ready?'#E1F5EE':'#FFF7E0')+';border:1px solid '+(aiState.ready?'#0F6E56':'#B45309')+';border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:12px">'
+  +'<span style="font-size:24px">'+(aiState.ready?'✅':'⚠️')+'</span>'
+  +'<div><div style="font-weight:700;color:'+(aiState.ready?'#0F6E56':'#B45309')+'">'
+  +(aiState.ready?(isAr?'الذكاء الاصطناعي جاهز — '+aiState.provider.toUpperCase():'AI Ready — '+aiState.provider.toUpperCase()):(isAr?'لم يتم إعداد الذكاء الاصطناعي بعد':'AI not configured yet'))
+  +'</div><div style="font-size:12px;color:var(--t2);margin-top:2px">'
+  +(aiState.ready?(isAr?'يمكنك استخدام جميع ميزات الذكاء الاصطناعي':'You can use all AI features'):(isAr?'أدخل مفتاح API للبدء':'Enter API key to get started'))
+  +'</div></div></div>';
+
+ // Provider selection
+ h+='<div class="card" style="max-width:600px;margin-bottom:16px">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:16px;color:#185FA5">🤖 '+(isAr?'اختر نموذج الذكاء الاصطناعي':'Select AI Provider')+'</div>'
+  +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">';
+
+ [{id:'gemini',name:'Google Gemini',desc:isAr?'مجاني ✅':'Free ✅',color:'#1a73e8',icon:'🔷'},
+  {id:'claude',name:'Anthropic Claude',desc:isAr?'رصيد مجاني':'Free credits',color:'#e07b39',icon:'🟠'},
+  {id:'openai',name:'OpenAI ChatGPT',desc:isAr?'رصيد مجاني':'Free credits',color:'#10a37f',icon:'🟢'}
+ ].forEach(function(p){
+  var sel=aiState.provider===p.id;
+  h+='<div id="ai-prov-'+p.id+'" onclick="aiState.provider=\''+p.id+'\';document.querySelectorAll(\'[id^=ai-prov]\').forEach(function(e){e.style.borderColor=\'var(--bd)\';e.style.background=\'var(--sf)\';});this.style.borderColor=\''+p.color+'\';this.style.background=\''+p.color+'11\';" style="border:2px solid '+(sel?p.color:'var(--bd)')+';background:'+(sel?p.color+'11':'var(--sf)')+';border-radius:10px;padding:14px;cursor:pointer;text-align:center">'
+   +'<div style="font-size:24px;margin-bottom:6px">'+p.icon+'</div>'
+   +'<div style="font-weight:700;font-size:13px">'+p.name+'</div>'
+   +'<div style="font-size:11px;color:var(--t2);margin-top:3px">'+p.desc+'</div>'
+   +'</div>';
+ });
+ h+='</div>';
+
+ // API Key input
+ h+=fld(isAr?'مفتاح API *':'API Key *',
+  '<input id="ai-key" type="password" value="'+(aiState.apiKey||'')+'" placeholder="'+(isAr?'الصق مفتاح API هنا...':'Paste your API key here...')+'" style="width:100%;padding:8px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">'
+ );
+
+ // Model input (optional)
+ h+=fld(isAr?'النموذج (اختياري)':'Model (optional)',
+  '<input id="ai-model" value="'+(aiState.model||'')+'" placeholder="'+(isAr?'مثال: gemini-1.5-flash أو اتركه فارغاً للافتراضي':'e.g. gemini-1.5-flash or leave blank for default')+'" style="width:100%;padding:8px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">'
+ );
+
+ h+='<div style="display:flex;gap:10px;margin-top:4px">'
+  +'<button class="btn bp" id="btnSaveAI" style="background:#185FA5;border-color:#185FA5">💾 '+(isAr?'حفظ الإعدادات':'Save Settings')+'</button>'
+  +'<button class="btn" id="btnTestAI">🧪 '+(isAr?'اختبار الاتصال':'Test Connection')+'</button>'
+  +'</div>'
+  +'<div id="aiTestResult" style="margin-top:10px;font-size:13px"></div>'
+  +'</div>';
+
+ // How to get API key
+ h+='<div class="card" style="max-width:600px">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:12px">🔑 '+(isAr?'كيف تحصل على مفتاح API مجاني؟':'How to get a free API key?')+'</div>'
+  +'<div style="display:flex;flex-direction:column;gap:12px">'
+  +'<div style="background:#E6F1FB;border-radius:8px;padding:12px">'
+  +'<div style="font-weight:700;color:#185FA5;margin-bottom:4px">🔷 Google Gemini — '+(isAr?'مجاني 100%':'100% Free')+'</div>'
+  +'<div style="font-size:12px;color:var(--t2)">1. '+(isAr?'افتح':'Go to')+' <strong>aistudio.google.com</strong><br>'
+  +'2. '+(isAr?'سجّل بحساب Google':'Sign in with Google account')+' <br>'
+  +'3. '+(isAr?'اضغط Get API Key ← Create API Key':'Click Get API Key → Create API Key')+'</div>'
+  +'</div>'
+  +'<div style="background:#FFF7E0;border-radius:8px;padding:12px">'
+  +'<div style="font-weight:700;color:#B45309;margin-bottom:4px">🟠 Claude / 🟢 ChatGPT</div>'
+  +'<div style="font-size:12px;color:var(--t2)">'+(isAr?'سجّل في console.anthropic.com أو platform.openai.com واحصل على $5 رصيد مجاني':'Sign up at console.anthropic.com or platform.openai.com for $5 free credit')+'</div>'
+  +'</div>'
+  +'</div></div>';
+
+ h+='</div>';
+ return h;
+}
+
+// ── AI Bank Reconciliation ────────────────────────────────────
+var aiBankState={accId:'',period:'',bankData:'',result:'',loading:false};
+
+function pAIBank(){
+ var isAr=lang==='ar';
+ if(!aiState.ready)return pAINotReady(isAr);
+ var h=tb(isAr?'🏦 التسوية البنكية بالذكاء الاصطناعي':'🏦 AI Bank Reconciliation','');
+ h+='<div class="pg">';
+
+ h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">';
+
+ // Left panel - inputs
+ h+='<div class="card">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:16px;color:#185FA5">⚙️ '+(isAr?'إعدادات التسوية':'Reconciliation Settings')+'</div>';
+
+ // Bank account selector
+ var bankAccs=db.accounts.filter(function(a){return !a.isMain&&(a.id.indexOf('1101')===0||a.type==='Asset');});
+ h+=fld(isAr?'حساب البنك *':'Bank Account *',
+  '<select id="aibank-acc" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">'
+  +'<option value="">— '+(isAr?'اختر الحساب':'Select Account')+' —</option>'
+  +bankAccs.map(function(a){return '<option value="'+a.id+'"'+(a.id===aiBankState.accId?' selected':'')+'>'+a.id+' - '+accN(a)+'</option>';}).join('')
+  +'</select>'
+ );
+
+ // Period
+ h+='<div class="fr2">'
+  +fld(isAr?'من تاريخ':'From','<input type="date" id="aibank-from" value="'+(aiBankState.from||'')+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
+  +fld(isAr?'إلى تاريخ':'To','<input type="date" id="aibank-to" value="'+(aiBankState.to||'')+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
+  +'</div>';
+
+ // Bank statement upload
+ h+=fld(isAr?'كشف الحساب البنكي *':'Bank Statement *',
+  '<div style="border:2px dashed var(--bd2);border-radius:var(--r);padding:20px;text-align:center;cursor:pointer;background:var(--bg)" id="aibank-drop-zone">'
+  +'<div style="font-size:24px;margin-bottom:6px">📄</div>'
+  +'<div style="font-size:12px;color:var(--t2)">'+(isAr?'اسحب ملف PDF أو Excel أو CSV هنا أو اضغط للاختيار':'Drag PDF, Excel, or CSV here or click to select')+'</div>'
+  +'<input type="file" id="aibank-file" accept=".pdf,.xlsx,.xls,.csv,.txt" style="display:none">'
+  +'<div id="aibank-file-name" style="margin-top:8px;font-size:12px;color:#185FA5;font-weight:600"></div>'
+  +'</div>'
+ );
+
+ // Manual paste option
+ h+=fld(isAr?'أو الصق بيانات الكشف يدوياً':'Or paste statement data manually',
+  '<textarea id="aibank-paste" rows="4" placeholder="'+(isAr?'الصق محتوى كشف الحساب هنا...':'Paste bank statement content here...')+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;resize:vertical"></textarea>'
+ );
+
+ h+='<button class="btn bp" id="btnAIReconcile" style="width:100%;justify-content:center;background:#185FA5;border-color:#185FA5;padding:11px">'
+  +(aiBankState.loading?'⏳ '+(isAr?'جاري التسوية...':'Processing...'):'🤖 '+(isAr?'إجراء التسوية بالذكاء الاصطناعي':'Run AI Reconciliation'))
+  +'</button>'
+  +'</div>';
+
+ // Right panel - results
+ h+='<div class="card">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:16px;color:#0F6E56">📊 '+(isAr?'نتائج التسوية':'Reconciliation Results')+'</div>';
+
+ if(aiBankState.result){
+  h+='<div style="background:var(--bg);border-radius:8px;padding:14px;font-size:13px;line-height:1.8;white-space:pre-wrap;max-height:500px;overflow-y:auto;border:1px solid var(--bd)">'+aiBankState.result+'</div>'
+   +'<div style="margin-top:10px;display:flex;gap:8px">'
+   +'<button class="btn bsm" id="btnAIBankCopy">📋 '+(isAr?'نسخ':'Copy')+'</button>'
+   +'<button class="btn bsm" id="btnAIBankPrint">🖨️ '+(isAr?'PDF':'PDF')+'</button>'
+   +'<button class="btn bsm" id="btnAIBankExcel">📊 '+(isAr?'Excel':'Excel')+'</button>'
+   +'<button class="btn bsm" id="btnAIBankWord">📄 '+(isAr?'Word':'Word')+'</button>'
+   +'</div>';
+ } else {
+  h+='<div style="text-align:center;padding:60px 20px;color:var(--t3)">'
+   +'<div style="font-size:48px;margin-bottom:12px">🏦</div>'
+   +'<div style="font-size:13px">'+(isAr?'ستظهر نتائج التسوية هنا بعد تشغيل الذكاء الاصطناعي':'Reconciliation results will appear here after running AI')+'</div>'
+   +'</div>';
+ }
+
+ h+='</div></div></div>';
+ return h;
+}
+
+// ── AI Financial Analysis ─────────────────────────────────────
+var aiAnalysisState={result:'',loading:false,type:'comprehensive'};
+
+function pAIAnalysis(){
+ var isAr=lang==='ar';
+ if(!aiState.ready)return pAINotReady(isAr);
+ var h=tb(isAr?'📊 التحليل المالي بالذكاء الاصطناعي':'📊 AI Financial Analysis','');
+ h+='<div class="pg">';
+
+ h+='<div class="card" style="max-width:900px;margin-bottom:16px">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:16px;color:#185FA5">⚙️ '+(isAr?'نوع التحليل':'Analysis Type')+'</div>'
+  +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">';
+
+ [{id:'comprehensive',ar:'تحليل شامل',en:'Comprehensive',icon:'🔍'},
+  {id:'profitability',ar:'تحليل الربحية',en:'Profitability',icon:'💰'},
+  {id:'liquidity',ar:'تحليل السيولة',en:'Liquidity',icon:'💧'},
+  {id:'efficiency',ar:'كفاءة التشغيل',en:'Efficiency',icon:'⚙️'},
+  {id:'risk',ar:'تحليل المخاطر',en:'Risk Analysis',icon:'⚠️'},
+  {id:'comparison',ar:'المقارنة الزمنية',en:'Time Comparison',icon:'📈'}
+ ].forEach(function(t){
+  var sel=aiAnalysisState.type===t.id;
+  h+='<div onclick="aiAnalysisState.type=\''+t.id+'\';document.querySelectorAll(\'.ai-type-btn\').forEach(function(e){e.style.borderColor=\'var(--bd)\';e.style.background=\'var(--sf)\'});this.style.borderColor=\'#185FA5\';this.style.background=\'#E6F1FB\';" class="ai-type-btn" style="border:2px solid '+(sel?'#185FA5':'var(--bd)')+';background:'+(sel?'#E6F1FB':'var(--sf)')+';border-radius:8px;padding:12px;cursor:pointer;text-align:center">'
+   +'<div style="font-size:20px">'+t.icon+'</div>'
+   +'<div style="font-size:12px;font-weight:600;margin-top:4px">'+(isAr?t.ar:t.en)+'</div>'
+   +'</div>';
+ });
+
+ h+='</div>'
+  +'<div class="fr2">'
+  +fld(isAr?'من':'From','<input type="date" id="aiana-from" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
+  +fld(isAr?'إلى':'To','<input type="date" id="aiana-to" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
+  +'</div>'
+  +'<button class="btn bp" id="btnAIAnalyze" style="width:100%;justify-content:center;background:#185FA5;border-color:#185FA5;padding:11px">'
+  +(aiAnalysisState.loading?'⏳ '+(isAr?'جاري التحليل...':'Analyzing...'):'🤖 '+(isAr?'تحليل بالذكاء الاصطناعي':'Run AI Analysis'))
+  +'</button></div>';
+
+ if(aiAnalysisState.result){
+  h+='<div class="card" style="max-width:900px">'
+   +'<div style="font-weight:700;font-size:14px;margin-bottom:12px;color:#0F6E56">📋 '+(isAr?'نتائج التحليل':'Analysis Results')+'</div>'
+   +'<div style="background:var(--bg);border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;border:1px solid var(--bd)">'+aiAnalysisState.result+'</div>'
+   +'<div style="margin-top:10px;display:flex;gap:8px">'
+   +'<button class="btn bsm" id="btnAIAnaCopy">📋 '+(isAr?'نسخ':'Copy')+'</button>'
+   +'<button class="btn bsm" id="btnAIAnaPrint">🖨️ '+(isAr?'PDF':'PDF')+'</button>'
+   +'<button class="btn bsm" id="btnAIAnaExcel">📊 '+(isAr?'Excel':'Excel')+'</button>'
+   +'<button class="btn bsm" id="btnAIAnaWord">📄 '+(isAr?'Word':'Word')+'</button>'
+   +'</div></div>';
+ }
+
+ h+='</div>';
+ return h;
+}
+
+// ── AI Cash Flow ──────────────────────────────────────────────
+var aiCashState={result:'',loading:false};
+
+function pAICashFlow(){
+ var isAr=lang==='ar';
+ if(!aiState.ready)return pAINotReady(isAr);
+ var h=tb(isAr?'💵 قائمة التدفقات النقدية':'💵 Cash Flow Statement','');
+ h+='<div class="pg">';
+ h+='<div class="card" style="max-width:700px;margin-bottom:16px">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:16px;color:#185FA5">⚙️ '+(isAr?'إعدادات القائمة':'Statement Settings')+'</div>'
+  +'<div class="fr2">'
+  +fld(isAr?'من':'From','<input type="date" id="aicash-from" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
+  +fld(isAr?'إلى':'To','<input type="date" id="aicash-to" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">')
+  +'</div>'
+  +fld(isAr?'الطريقة':'Method',
+   '<select id="aicash-method" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">'
+   +'<option value="indirect">'+(isAr?'الطريقة غير المباشرة (المعتادة)':'Indirect Method (Standard)')+'</option>'
+   +'<option value="direct">'+(isAr?'الطريقة المباشرة':'Direct Method')+'</option>'
+   +'</select>'
+  )
+  +'<button class="btn bp" id="btnAICashFlow" style="width:100%;justify-content:center;background:#0F6E56;border-color:#0F6E56;padding:11px">'
+  +(aiCashState.loading?'⏳ '+(isAr?'جاري الإعداد...':'Processing...'):'🤖 '+(isAr?'إعداد قائمة التدفقات':'Generate Cash Flow Statement'))
+  +'</button></div>';
+
+ if(aiCashState.result){
+  h+='<div class="card" style="max-width:700px">'
+   +'<div style="font-weight:700;font-size:14px;margin-bottom:12px;color:#0F6E56">💵 '+(isAr?'قائمة التدفقات النقدية':'Cash Flow Statement')+'</div>'
+   +'<div style="background:var(--bg);border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;border:1px solid var(--bd)">'+aiCashState.result+'</div>'
+   +'<div style="margin-top:10px;display:flex;gap:8px">'
+   +'<button class="btn bsm" id="btnAICashCopy">📋 '+(isAr?'نسخ':'Copy')+'</button>'
+   +'<button class="btn bsm" id="btnAICashPrint">🖨️ '+(isAr?'PDF':'PDF')+'</button>'
+   +'<button class="btn bsm" id="btnAICashExcel">📊 '+(isAr?'Excel':'Excel')+'</button>'
+   +'<button class="btn bsm" id="btnAICashWord">📄 '+(isAr?'Word':'Word')+'</button>'
+   +'</div></div>';
+ }
+ h+='</div>';
+ return h;
+}
+
+// ── AI Forecast ───────────────────────────────────────────────
+var aiForecastState={result:'',loading:false,type:'sales'};
+
+function pAIForecast(){
+ var isAr=lang==='ar';
+ if(!aiState.ready)return pAINotReady(isAr);
+ var h=tb(isAr?'🔮 التنبؤ المالي بالذكاء الاصطناعي':'🔮 AI Financial Forecast','');
+ h+='<div class="pg">';
+ h+='<div class="card" style="max-width:700px;margin-bottom:16px">'
+  +'<div style="font-weight:700;font-size:14px;margin-bottom:16px;color:#6D28D9">⚙️ '+(isAr?'نوع التنبؤ':'Forecast Type')+'</div>'
+  +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">';
+
+ [{id:'sales',ar:'تنبؤ المبيعات',en:'Sales Forecast',icon:'📈',color:'#185FA5'},
+  {id:'bankruptcy',ar:'نموذج الإفلاس (Altman Z)',en:'Bankruptcy Risk (Altman Z)',icon:'⚠️',color:'#B91C1C'},
+  {id:'cashflow',ar:'تنبؤ التدفق النقدي',en:'Cash Flow Forecast',icon:'💵',color:'#0F6E56'},
+  {id:'budget',ar:'الميزانية التقديرية',en:'Budget Forecast',icon:'📋',color:'#6D28D9'}
+ ].forEach(function(t){
+  var sel=aiForecastState.type===t.id;
+  h+='<div onclick="aiForecastState.type=\''+t.id+'\';document.querySelectorAll(\'.ai-fc-btn\').forEach(function(e){e.style.borderColor=\'var(--bd)\';e.style.background=\'var(--sf)\'});this.style.borderColor=\''+t.color+'\';this.style.background=\''+t.color+'11\';" class="ai-fc-btn" style="border:2px solid '+(sel?t.color:'var(--bd)')+';background:'+(sel?t.color+'11':'var(--sf)')+';border-radius:8px;padding:14px;cursor:pointer">'
+   +'<div style="font-size:24px;margin-bottom:6px">'+t.icon+'</div>'
+   +'<div style="font-size:12px;font-weight:700;color:'+t.color+'">'+(isAr?t.ar:t.en)+'</div>'
+   +'</div>';
+ });
+
+ h+='</div>'
+  +fld(isAr?'فترة التنبؤ':'Forecast Period',
+   '<select id="aifc-period" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">'
+   +'<option value="3">'+(isAr?'3 أشهر':'3 Months')+'</option>'
+   +'<option value="6">'+(isAr?'6 أشهر':'6 Months')+'</option>'
+   +'<option value="12" selected>'+(isAr?'12 شهر (سنة)':'12 Months (1 Year)')+'</option>'
+   +'</select>'
+  )
+  +'<button class="btn bp" id="btnAIForecast" style="width:100%;justify-content:center;background:#6D28D9;border-color:#6D28D9;padding:11px">'
+  +(aiForecastState.loading?'⏳ '+(isAr?'جاري التنبؤ...':'Forecasting...'):'🤖 '+(isAr?'توليد التنبؤ المالي':'Generate Financial Forecast'))
+  +'</button></div>';
+
+ if(aiForecastState.result){
+  h+='<div class="card" style="max-width:700px">'
+   +'<div style="font-weight:700;font-size:14px;margin-bottom:12px;color:#6D28D9">🔮 '+(isAr?'نتائج التنبؤ':'Forecast Results')+'</div>'
+   +'<div style="background:var(--bg);border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;border:1px solid var(--bd)">'+aiForecastState.result+'</div>'
+   +'<div style="margin-top:10px;display:flex;gap:8px">'
+   +'<button class="btn bsm" id="btnAIFcCopy">📋 '+(isAr?'نسخ':'Copy')+'</button>'
+   +'<button class="btn bsm" id="btnAIFcPrint">🖨️ '+(isAr?'PDF':'PDF')+'</button>'
+   +'<button class="btn bsm" id="btnAIFcExcel">📊 '+(isAr?'Excel':'Excel')+'</button>'
+   +'<button class="btn bsm" id="btnAIFcWord">📄 '+(isAr?'Word':'Word')+'</button>'
+   +'</div></div>';
+ }
+ h+='</div>';
+ return h;
+}
+
+// ── AI Not Ready Helper ───────────────────────────────────────
+function pAINotReady(isAr){
+ return '<div class="pg"><div style="text-align:center;padding:80px 20px">'
+  +'<div style="font-size:64px;margin-bottom:16px">🤖</div>'
+  +'<div style="font-size:18px;font-weight:700;margin-bottom:8px">'+(isAr?'الذكاء الاصطناعي غير مُعدّ بعد':'AI Not Configured Yet')+'</div>'
+  +'<div style="font-size:13px;color:var(--t2);margin-bottom:20px">'+(isAr?'يرجى إعداد مفتاح API أولاً':'Please configure your API key first')+'</div>'
+  +'<button class="btn bp" style="background:#185FA5;border-color:#185FA5" onclick="view=\'ai_settings\';render()">'+(isAr?'⚙️ إعداد الذكاء الاصطناعي':'⚙️ Configure AI')+'</button>'
+  +'</div></div>';
+}
+
+
 function pDashboard(){
  var isAr=lang==='ar';
  var totalJE=db.journals.length;
@@ -2390,16 +2765,26 @@ function buildFilterBar(){
   +'</select></div>'
   +'<div class="fl" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:2px">'
   +'<input type="checkbox" id="rptShowCodes" '+(rptShowCodes?'checked':'')+' style="width:15px;height:15px;cursor:pointer">'
-  +'<label for="rptShowCodes" style="font-size:12px;cursor:pointer;white-space:nowrap">أرقام الحسابات</label>'
+  +'<label for="rptShowCodes" style="font-size:12px;cursor:pointer;white-space:nowrap">'+(lang==='ar'?'أرقام الحسابات':'Account Codes')+'</label>'
   +'</div>'
-  +'<button class="btn bp" id="btnApplyRpt">Apply</button>'
-  +'<button class="btn" id="btnClearRpt">Clear</button>'
+  +'<button class="btn bp" id="btnApplyRpt" style="background:#185FA5;border-color:#185FA5">'+(lang==='ar'?'🔍 عرض التقرير':'🔍 Show Report')+'</button>'
+  +'<button class="btn" id="btnClearRpt">'+(lang==='ar'?'مسح':'Clear')+'</button>'
   +'</div>'
-  +((f2||t2)?'<div style="margin-top:8px;font-size:11px;color:var(--t2)">Period: '+(f2||'All')+' to '+(t2||'All')+' | Level: '+lv2+(rptShowCodes?' | Codes: ON':'')+'</div>':'')
+  +((f2||t2)?'<div style="margin-top:8px;font-size:11px;color:var(--t2)">'+(lang==='ar'?'الفترة:':'Period:')+' '+(f2||lang==='ar'?'الكل':'All')+' '+(lang==='ar'?'إلى':'to')+' '+(t2||lang==='ar'?'الكل':'All')+(rptShowCodes?' | '+(lang==='ar'?'الأرقام: مُفعّل':'Codes: ON'):'')+'</div>':'')
   +'</div>';
 }
 function pTrial(){
+ var isAr=lang==='ar';
  var f=rptFrom,t=rptTo,lv=rptLevel;
+ var h=tb(tr('nav_trial'),
+  '<button class="btn" data-action="editOB">'+ic('edit')+' Opening Balances</button>'
+  +'<button class="btn" data-action="xlsTrial">'+ic('dn')+' Excel</button>'
+  +'<button class="btn" data-action="pdfTrial">'+ic('prt')+' PDF</button>');
+ h+='<div class="pg">'+buildFilterBar();
+ if(!rptLoaded){
+  h+='<div style="text-align:center;padding:60px 20px;color:var(--t3)"><div style="font-size:48px;margin-bottom:12px">📊</div><div style="font-size:14px;font-weight:600;color:var(--t2)">'+(isAr?'اضغط "عرض التقرير" لعرض ميزان المراجعة':'Click "Show Report" to display Trial Balance')+'</div></div>';
+  h+='</div>';return h;
+ }
  var types=['Asset','Liability','Equity','Revenue','Expense'],rows=[],drTotal=0,crTotal=0;
  types.forEach(function(tp){
   db.accounts.filter(function(a){return a.type===tp&&a.isMain;}).forEach(function(m){
@@ -2428,13 +2813,6 @@ function pTrial(){
  var dr=drTotal,cr=crTotal;
  var ok=Math.abs(dr-cr)<0.01;
  var diff2=Math.abs(dr-cr);
- var h=tb(tr('nav_trial'),
-  '<button class="btn" data-action="editOB">'+ic('edit')+' Opening Balances</button>'
-  +'<button class="btn" data-action="xlsTrial">'+ic('dn')+' Excel</button>'
-  +'<button class="btn" data-action="pdfTrial">'+ic('prt')+' PDF</button>'
-  +'<span class="b '+(ok?'bgn':'brd')+'" style="padding:5px 12px">'+(ok?'✅ Balanced':'⚠️ Out of Balance')+'</span>');
- h+='<div class="pg">'+buildFilterBar('trial');
- // Alert if not balanced
  if(!ok){
   h+='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">'
    +'<span style="font-size:20px">⚠️</span>'
@@ -2442,21 +2820,19 @@ function pTrial(){
    +'<div style="font-size:12px;color:#dc2626;margin-top:2px">فرق الأرصدة: <strong>'+N(diff2)+'</strong> — إجمالي المدين: '+N(dr)+' | إجمالي الدائن: '+N(cr)+'</div>'
    +'</div></div>';
  }
- h+='<div class="card"><div class="tw"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th class="tr">Debit</th><th class="tr">Credit</th></tr></thead><tbody>';
+ h+='<div class="card"><div class="tw"><table><thead><tr>'
+  +'<th>Code</th><th>Account</th>'+(rptShowCodes?'':'')+'<th>Type</th><th class="tr">Debit</th><th class="tr">Credit</th>'
+  +'</tr></thead><tbody>';
  rows.forEach(function(r){
-  var indent=(!r.isMain&&r.pid)?'padding-left:22px':'';
   var dr2,cr2;
-  if(r.normal==='Debit'){
-   // Debit-normal: positive bal → Debit column, negative bal → Credit column
-   if(r.bal>=0){dr2=r.bal;cr2=0;}else{dr2=0;cr2=Math.abs(r.bal);}
-  } else {
-   // Credit-normal: positive bal → Credit column, negative bal → Debit column
-   if(r.bal>=0){dr2=0;cr2=r.bal;}else{dr2=Math.abs(r.bal);cr2=0;}
-  }
+  if(r.normal==='Debit'){if(r.bal>=0){dr2=r.bal;cr2=0;}else{dr2=0;cr2=Math.abs(r.bal);}}
+  else{if(r.bal>=0){dr2=0;cr2=r.bal;}else{dr2=Math.abs(r.bal);cr2=0;}}
   var rowBg=r.isMain?'background:var(--bg)':'';
+  var indent=r.pid?'padding-right:20px':'';
+  var nameDisplay=rptShowCodes?(r.id+' '):'';
   h+='<tr style="'+rowBg+'">'
    +'<td><span class="tag">'+r.id+'</span></td>'
-   +'<td style="'+indent+'">'+(r.isMain?'<strong>'+r.name+'</strong>':r.name)+'</td>'
+   +'<td style="'+indent+'">'+(r.isMain?'<strong>'+r.name+'</strong>':r.name)+(r.nameAr&&lang==='ar'?' | '+r.nameAr:'')+'</td>'
    +'<td style="font-size:11px;color:var(--t2)">'+r.type+'</td>'
    +'<td class="tr mn">'+(dr2?N(dr2):'')+'</td>'
    +'<td class="tr mn">'+(cr2?N(cr2):'')+'</td>'
@@ -2479,10 +2855,15 @@ function incData(){
  return{rev:rev,exp:exp,ca:ca,gp:rev-ca,ni:rev-exp,oe:exp-ca};
 }
 function pIncome(){
+ var isAr=lang==='ar';
  var f=rptFrom,t=rptTo,lv=rptLevel;
- var d=incData();
  var h=tb(tr('nav_income'),'<button class="btn" data-action="xlsIncome">'+ic('dn')+' Excel</button><button class="btn" data-action="pdfIncome">'+ic('prt')+' PDF</button>');
- h+='<div class="pg">'+buildFilterBar('income');
+ h+='<div class="pg">'+buildFilterBar();
+ if(!rptLoaded){
+  h+='<div style="text-align:center;padding:60px 20px;color:var(--t3)"><div style="font-size:48px;margin-bottom:12px">📈</div><div style="font-size:14px;font-weight:600;color:var(--t2)">'+(isAr?'اضغط "عرض التقرير" لعرض قائمة الدخل':'Click "Show Report" to display Income Statement')+'</div></div>';
+  h+='</div>';return h;
+ }
+ var d=incData();
  h+='<div class="mets"><div class="met"><div class="mlab">Revenue</div><div class="mv">'+fmt(d.rev)+'</div></div><div class="met"><div class="mlab">Gross Profit</div><div class="mv '+(d.gp>=0?'pos':'neg')+'">'+fmt(d.gp)+'</div></div><div class="met"><div class="mlab">Net Income</div><div class="mv '+(d.ni>=0?'pos':'neg')+'">'+fmt(d.ni)+'</div></div></div>';
  h+='<div class="card" style="max-width:560px"><div class="rh">Revenue</div>';
  db.accounts.filter(function(a){return a.type==='Revenue'&&a.isMain;}).forEach(function(m){
@@ -2562,7 +2943,14 @@ function bsRows(mains,f,t){
  return h;
 }
 function pBalance(){
+ var isAr=lang==='ar';
  var f=rptFrom,t=rptTo;
+ var h=tb(tr('nav_balance'),'<button class="btn" data-action="xlsBalance">'+ic('dn')+' Excel</button><button class="btn" data-action="pdfBalance">'+ic('prt')+' PDF</button>');
+ h+='<div class="pg">'+buildFilterBar();
+ if(!rptLoaded){
+  h+='<div style="text-align:center;padding:60px 20px;color:var(--t3)"><div style="font-size:48px;margin-bottom:12px">🏦</div><div style="font-size:14px;font-weight:600;color:var(--t2)">'+(isAr?'اضغط "عرض التقرير" لعرض الميزانية العمومية':'Click "Show Report" to display Balance Sheet')+'</div></div>';
+  h+='</div>';return h;
+ }
  // Calculate all balances including sub-sub accounts
  function leafBal(type){
   // Recursive leaf balance - finds all leaf accounts of given type
@@ -3004,6 +3392,9 @@ function mVoucher(){
 
 // ═══ ACTIONS (called from onclick) ═══════════════════════════
 window.xAction=function(type){
+ if(type==='toggleLang'){setLang(lang==='ar'?'en':'ar');return;}
+ if(type==='logout'){currentUser=null;clearSession();render();return;}
+ if(type==='switchCo'){currentCompanyId=null;appState='selectCompany';render();return;}
  // Inventory actions
  if(type==='addItem'){tItem={};modal='item';render();return;}
  if(type==='addPI'){tPI={isReturn:false};modal='pi';render();return;}
@@ -3436,6 +3827,22 @@ window.xAction=function(type){
 
 // ═══ EVENTS ══════════════════════════════════════════════════
 function bindEvents(){
+ // Global delegation on document for sidebar buttons
+ if(!window._globalDelegationAdded){
+  window._globalDelegationAdded=true;
+  document.addEventListener('click',function(e){
+   var t=e.target;
+   while(t&&t!==document){
+    var id=t.id||'';
+    if(id==='langToggle'){e.preventDefault();e.stopPropagation();window.setLang(window.lang==='ar'?'en':'ar');return;}
+    if(id==='btnLogout'){e.preventDefault();window.doLogout();return;}
+    if(id==='btnSwitchCo'){e.preventDefault();window.doSwitchCo();return;}
+    if(id==='expD'){e.preventDefault();if(typeof exportData==='function')exportData();return;}
+    if(id==='impD'){e.preventDefault();var f=document.getElementById('impF');if(f)f.click();return;}
+    t=t.parentElement;
+   }
+  });
+ }
 
  on('[data-navto]','click',function(el,e){e.stopPropagation();var p=el.dataset.navto.split(':'),t=p[0],id=p[1];if(t==='cus'){cusView=db.customers.find(function(c){return c.id===id;});view='customers';}else{supView=db.suppliers.find(function(s){return s.id===id;});view='suppliers';}render();});
  on1('langToggle','click',function(){setLang(lang==='ar'?'en':'ar');});
@@ -3844,9 +4251,10 @@ function bindEvents(){
   rptTo=(document.getElementById('rptTo')||{}).value||'';
   rptLevel=(document.getElementById('rptLevel')||{}).value||'all';
   rptShowCodes=!!(document.getElementById('rptShowCodes')||{}).checked;
+  rptLoaded=true;
   render();
  });
- on1('btnClearRpt','click',function(){rptFrom='';rptTo='';rptLevel='all';rptShowCodes=false;render();});
+ on1('btnClearRpt','click',function(){rptFrom='';rptTo='';rptLevel='all';rptShowCodes=false;rptLoaded=false;render();});
  on1('btnApply','click',function(){
   var s=document.getElementById('accSel'),f=document.getElementById('sfrom'),t_=document.getElementById('sto');
   if(s)fAcc=s.value;if(f)fFrom=f.value;if(t_)fTo=t_.value;render();
@@ -4338,6 +4746,223 @@ function bindEvents(){
  on1('permAll','click',function(){document.querySelectorAll('.permCb').forEach(function(cb){cb.checked=true;});});
  on1('permNone','click',function(){document.querySelectorAll('.permCb').forEach(function(cb){cb.checked=false;});});
  // Add logout button handler
+ // AI Module Handlers
+ on1('btnSaveAI','click',function(){
+  // Read selected provider from visual selection
+  var provEl=Array.from(document.querySelectorAll('[id^="ai-prov-"]')).find(function(e){
+   var bc=e.style.borderColor||'';
+   return bc&&bc!==''&&bc!=='var(--bd)'&&bc!=='rgb(228, 226, 219)';
+  });
+  if(provEl)aiState.provider=provEl.id.replace('ai-prov-','');
+  aiState.apiKey=((document.getElementById('ai-key')||{}).value||'').trim();
+  aiState.model=((document.getElementById('ai-model')||{}).value||'').trim();
+  if(!aiState.model){
+   if(aiState.provider==='gemini')aiState.model='gemini-1.5-flash';
+   else if(aiState.provider==='claude')aiState.model='claude-sonnet-4-6';
+   else if(aiState.provider==='openai')aiState.model='gpt-4o-mini';
+  }
+  aiState.ready=!!(aiState.apiKey&&aiState.provider);
+  saveAISettings();
+  render();
+ });
+ on1('btnTestAI','click',async function(){
+  var key=(document.getElementById('ai-key')||{}).value||'';
+  var res=document.getElementById('aiTestResult');
+  if(!key){if(res)res.innerHTML='<span style="color:#b91c1c">'+String.fromCharCode(10060)+' Enter API key</span>';return;}
+  if(res)res.innerHTML='<span style="color:#b45309">...</span>';
+  var tmpKey=aiState.apiKey;aiState.apiKey=key;
+  try{var r=await callAI('Say OK only');if(res)res.innerHTML='<span style="color:#0F6E56">'+String.fromCharCode(9989)+' Connection successful</span>';}
+  catch(e){if(res)res.innerHTML='<span style="color:#b91c1c">'+String.fromCharCode(10060)+' '+e.message+'</span>';}
+  aiState.apiKey=tmpKey;
+ });
+ on1('aibank-drop-zone','click',function(){var f=document.getElementById('aibank-file');if(f)f.click();});
+ on1('aibank-file','change',function(){
+  var f=this.files&&this.files[0];if(!f)return;
+  var nm=document.getElementById('aibank-file-name');if(nm)nm.textContent=f.name;
+  var reader=new FileReader();
+  reader.onload=function(e){aiBankState.fileData=e.target.result;};
+  if(f.name.match(/\.(csv|txt)$/i))reader.readAsText(f);else reader.readAsDataURL(f);
+ });
+ on1('btnAIReconcile','click',async function(){
+  var accId=(document.getElementById('aibank-acc')||{}).value||'';
+  var from=(document.getElementById('aibank-from')||{}).value||'';
+  var to=(document.getElementById('aibank-to')||{}).value||'';
+  var paste=(document.getElementById('aibank-paste')||{}).value||'';
+  var bankData=paste||aiBankState.fileData||'';
+  if(!accId){alert('Select bank account');return;}
+  if(!bankData){alert('Enter bank statement');return;}
+  aiBankState.loading=true;render();
+  try{
+   var acc=db.accounts.find(function(a){return a.id===accId;});
+   var jeLines=[];
+   db.journals.forEach(function(j){if(!from||j.date>=from)if(!to||j.date<=to)j.lines.forEach(function(l){if(l.acc===accId)jeLines.push({date:j.date,desc:j.desc,dr:l.dr||0,cr:l.cr||0,ref:j.id});});});
+   var prompt=lang==='ar'?
+    'قم بإجراء تسوية بنكية شاملة للحساب: '+accN(acc)+'\n\nالفترة: '+(from||'البداية')+' إلى '+(to||'النهاية')+'\n\nحركات السجل المحاسبي:\n'+JSON.stringify(jeLines,null,2)+'\n\nكشف الحساب البنكي:\n'+bankData+'\n\nالمطلوب:\n1. ملخص الأرصدة\n2. العمليات الموجودة في السجل فقط (غير ظاهرة في الكشف البنكي)\n3. العمليات الموجودة في الكشف البنكي فقط (غير مسجلة في الدفاتر)\n4. جدول التسوية البنكية مع الأرقام\n5. التوصيات والإجراءات المطلوبة':
+    'Perform a comprehensive bank reconciliation for account: '+accN(acc)+'\n\nPeriod: '+(from||'Start')+' to '+(to||'End')+'\n\nAccounting records:\n'+JSON.stringify(jeLines,null,2)+'\n\nBank statement:\n'+bankData+'\n\nRequired:\n1. Balance summary\n2. Items in books only (not in bank statement)\n3. Items in bank only (not recorded in books)\n4. Reconciliation table with figures\n5. Recommendations and required actions';
+   aiBankState.result=await callAI(prompt);
+  }catch(e){aiBankState.result='Error: '+e.message;}
+  aiBankState.loading=false;render();
+ });
+ on1('btnAIAnalyze','click',async function(){
+  aiAnalysisState.loading=true;render();
+  try{
+   var f=(document.getElementById('aiana-from')||{}).value||'';var t2=(document.getElementById('aiana-to')||{}).value||'';
+   var rev=db.accounts.filter(function(a){return a.type==='Revenue'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
+   var xp=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
+   var assets=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
+   var liab=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
+   var data={company:db.company.name,revenue:rev,expenses:xp,netIncome:rev-xp,assets:assets,liabilities:liab,equity:assets-liab,type:aiAnalysisState.type};
+   var prompt=lang==='ar'?
+    'قم بإجراء تحليل مالي شامل ('+aiAnalysisState.type+') للشركة: '+db.company.name+'\n\nالبيانات المالية:\n'+JSON.stringify(data,null,2)+'\n\nالمطلوب:\n1. ملخص تنفيذي\n2. تحليل مفصل للبيانات المالية\n3. حساب المؤشرات والنسب المالية الرئيسية\n4. تقييم الوضع المالي\n5. نقاط القوة والضعف\n6. التوصيات والمقترحات':
+    'Perform comprehensive financial analysis ('+aiAnalysisState.type+') for: '+db.company.name+'\n\nFinancial Data:\n'+JSON.stringify(data,null,2)+'\n\nRequired:\n1. Executive summary\n2. Detailed financial data analysis\n3. Calculate key financial ratios\n4. Financial position assessment\n5. Strengths and weaknesses\n6. Recommendations';
+   aiAnalysisState.result=await callAI(prompt);
+  }catch(e){aiAnalysisState.result='Error: '+e.message;}
+  aiAnalysisState.loading=false;render();
+ });
+ on1('btnAICashFlow','click',async function(){
+  aiCashState.loading=true;render();
+  try{
+   var f=(document.getElementById('aicash-from')||{}).value||'';var t2=(document.getElementById('aicash-to')||{}).value||'';
+   var method=(document.getElementById('aicash-method')||{}).value||'indirect';
+   var journals=db.journals.filter(function(j){return(!f||j.date>=f)&&(!t2||j.date<=t2);}).map(function(j){return{date:j.date,desc:j.desc,lines:j.lines};});
+   var accs=db.accounts.map(function(a){return{id:a.id,name:a.name,type:a.type,normal:a.normal};});
+   var prompt=lang==='ar'?
+    'أعد قائمة التدفقات النقدية بالطريقة '+(method==='indirect'?'غير المباشرة':'المباشرة')+' للشركة: '+db.company.name+'\n\nالقيود اليومية:\n'+JSON.stringify(journals,null,2)+'\n\ndليل الحسابات:\n'+JSON.stringify(accs)+'\n\nالمطلوب:\n1. التدفقات النقدية من الأنشطة التشغيلية\n2. التدفقات النقدية من الأنشطة الاستثمارية\n3. التدفقات النقدية من الأنشطة التمويلية\n4. صافي التدفق النقدي والرصيد الختامي\n5. تحليل ومؤشرات التدفق النقدي':
+    'Prepare Cash Flow Statement ('+(method==='indirect'?'Indirect':'Direct')+' Method) for: '+db.company.name+'\n\nJournal Entries:\n'+JSON.stringify(journals,null,2)+'\n\nChart of Accounts:\n'+JSON.stringify(accs)+'\n\nRequired:\n1. Cash flows from Operating Activities\n2. Cash flows from Investing Activities\n3. Cash flows from Financing Activities\n4. Net cash flow and closing balance\n5. Cash flow analysis and indicators';
+   aiCashState.result=await callAI(prompt);
+  }catch(e){aiCashState.result='Error: '+e.message;}
+  aiCashState.loading=false;render();
+ });
+ on1('btnAIForecast','click',async function(){
+  aiForecastState.loading=true;render();
+  try{
+   var period=parseInt((document.getElementById('aifc-period')||{}).value||'12');
+   var rev=db.journals.reduce(function(s,j){j.lines.forEach(function(l){var a=db.accounts.find(function(ac){return ac.id===l.acc;});if(a&&a.type==='Revenue')s+=(l.cr||0);});return s;},0);
+   var xp=db.journals.reduce(function(s,j){j.lines.forEach(function(l){var a=db.accounts.find(function(ac){return ac.id===l.acc;});if(a&&a.type==='Expense')s+=(l.dr||0);});return s;},0);
+   var assets=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+(a.bal||0);},0);
+   var liab=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+(a.bal||0);},0);
+   var data={company:db.company.name,revenue:rev,expenses:xp,netIncome:rev-xp,assets:assets,liabilities:liab,forecastMonths:period,type:aiForecastState.type};
+   var typeNamesAr={sales:'تنبؤ المبيعات',bankruptcy:'تحليل مخاطر الإفلاس — Altman Z-Score',cashflow:'تنبؤ التدفق النقدي',budget:'الميزانية التقديرية'};
+   var typeNamesEn={sales:'Sales Forecast',bankruptcy:'Bankruptcy Risk Analysis — Altman Z-Score',cashflow:'Cash Flow Forecast',budget:'Budget Forecast'};
+   var prompt=lang==='ar'?
+    'قم بإعداد '+(typeNamesAr[aiForecastState.type]||aiForecastState.type)+' للشركة: '+db.company.name+'\n\nالبيانات المالية:\n'+JSON.stringify(data,null,2)+'\n\nالمطلوب:\n1. تحليل الوضع الحالي\n2. تنبؤ للـ '+period+' شهر مع الأرقام\n3. الافتراضات\n4. سيناريوهات: متفائل / محايد / متشائم\n5. التوصيات'+(aiForecastState.type==='bankruptcy'?'\n6. حساب Altman Z-Score وتحديد منطقة الخطر':''):
+    'Prepare '+(typeNamesEn[aiForecastState.type]||aiForecastState.type)+' for: '+db.company.name+'\n\nCurrent Financial Data:\n'+JSON.stringify(data,null,2)+'\n\nRequired:\n1. Current financial position analysis\n2. '+period+'-month forecast with figures\n3. Forecast assumptions\n4. Scenarios: Optimistic / Neutral / Pessimistic\n5. Key indicators and recommendations'+(aiForecastState.type==='bankruptcy'?'\n6. Calculate Altman Z-Score and identify risk zone':'');
+   aiForecastState.result=await callAI(prompt);
+  }catch(e){aiForecastState.result='Error: '+e.message;}
+  aiForecastState.loading=false;render();
+ });
+ ['Bank','Ana','Cash','Fc'].forEach(function(k){
+  var sm={Bank:aiBankState,Ana:aiAnalysisState,Cash:aiCashState,Fc:aiForecastState};
+  var titles={Bank:lang==='ar'?'التسوية البنكية':'Bank Reconciliation',Ana:lang==='ar'?'التحليل المالي':'Financial Analysis',Cash:lang==='ar'?'قائمة التدفقات النقدية':'Cash Flow Statement',Fc:lang==='ar'?'التنبؤ المالي':'Financial Forecast'};
+
+  on1('btnAI'+k+'Copy','click',function(){
+   var txt=(sm[k]||{}).result||'';
+   try{navigator.clipboard.writeText(txt);}catch(ex){}
+   alert(lang==='ar'?'تم النسخ':'Copied!');
+  });
+
+  on1('btnAI'+k+'Print','click',function(){
+   var txt=(sm[k]||{}).result||'';
+   var title=titles[k];
+   // Convert markdown to HTML for better PDF
+   var html=txt
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^# (.+)$/gm,'<h1>$1</h1>')
+    .replace(/^\| (.+) \|$/gm,function(m){
+     var cells=m.split('|').filter(function(c){return c.trim();});
+     return '<tr>'+cells.map(function(c){return '<td style="border:1px solid #ddd;padding:6px 10px">'+c.trim()+'</td>';}).join('')+'</tr>';
+    })
+    .replace(/(<tr>.*<\/tr>\n?)+/g,function(m){return '<table style="border-collapse:collapse;width:100%;margin:10px 0">'+m+'</table>';})
+    .replace(/\n/g,'<br>');
+   var w=window.open('','_blank');
+   if(w){
+    w.document.write(
+     '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+title+'</title>'
+     +'<style>body{font-family:Arial,sans-serif;padding:30px;direction:rtl;line-height:1.8;font-size:13px}'
+     +'h1,h2,h3{color:#185FA5;margin-top:20px}table{border-collapse:collapse;width:100%;margin:10px 0}'
+     +'td,th{border:1px solid #ddd;padding:6px 10px}strong{color:#0F6E56}'
+     +'@media print{body{padding:15px}button{display:none}}</style></head>'
+     +'<body>'
+     +'<div style="border-bottom:3px solid #185FA5;padding-bottom:12px;margin-bottom:20px">'
+     +'<h2 style="margin:0;color:#185FA5">'+db.company.name+'</h2>'
+     +'<div style="color:#666;font-size:12px">'+title+' | '+today()+'</div>'
+     +'</div>'
+     +html
+     +'<div style="margin-top:30px;padding-top:12px;border-top:1px solid #ddd;font-size:11px;color:#999;text-align:center">AccountPro — '+title+' | '+today()+'</div>'
+     +'</body></html>'
+    );
+    w.document.close();
+    setTimeout(function(){w.print();},800);
+   }
+  });
+
+  on1('btnAI'+k+'Word','click',function(){
+   var txt=(sm[k]||{}).result||'';
+   var title=titles[k];
+   // Convert markdown to Word-compatible HTML
+   var html=txt
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^### (.+)$/gm,'<h3 style="color:#185FA5;font-size:13pt">$1</h3>')
+    .replace(/^## (.+)$/gm,'<h2 style="color:#185FA5;font-size:15pt">$1</h2>')
+    .replace(/^# (.+)$/gm,'<h1 style="color:#185FA5;font-size:18pt">$1</h1>')
+    .replace(/^\| (.+) \|$/gm,function(m){
+     if(m.match(/^[\|\s\-:]+$/))return '';
+     var cells=m.split('|').filter(function(c){return c.trim();});
+     return '<tr>'+cells.map(function(c){return '<td style="border:1px solid #ddd;padding:5pt 8pt;font-size:10pt">'+c.trim()+'</td>';}).join('')+'</tr>';
+    })
+    .replace(/(<tr>[\s\S]*?<\/tr>)+/g,function(m){return '<table style="border-collapse:collapse;width:100%;margin:8pt 0">'+m+'</table>';})
+    .replace(/^---$/gm,'<hr>')
+    .replace(/\n\n/g,'</p><p>')
+    .replace(/\n/g,'<br>');
+   var wordHtml='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+    +'<head><meta charset="UTF-8">'
+    +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->'
+    +'<style>body{font-family:Arial,sans-serif;font-size:11pt;direction:rtl;margin:2cm}'
+    +'h1{font-size:18pt;color:#185FA5}h2{font-size:15pt;color:#185FA5}h3{font-size:13pt;color:#185FA5}'
+    +'table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:5pt 8pt}'
+    +'strong{color:#0F6E56}.header{border-bottom:3pt solid #185FA5;margin-bottom:14pt;padding-bottom:8pt}'
+    +'</style></head><body>'
+    +'<div class="header">'
+    +'<div style="font-size:16pt;font-weight:700;color:#185FA5">'+db.company.name+'</div>'
+    +'<div style="font-size:11pt;color:#666">'+title+' | '+today()+'</div>'
+    +'</div>'
+    +'<p>'+html+'</p>'
+    +'<div style="margin-top:30pt;padding-top:8pt;border-top:1pt solid #ddd;font-size:9pt;color:#999;text-align:center">AccountPro — '+title+' | '+today()+'</div>'
+    +'</body></html>';
+   var blob=new Blob(['\ufeff'+wordHtml],{type:'application/msword;charset=utf-8'});
+   var a=document.createElement('a');
+   a.href=URL.createObjectURL(blob);
+   a.download=title.replace(/\s/g,'_')+'_'+today()+'.doc';
+   a.click();
+   setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+  });
+
+  on1('btnAI'+k+'Excel','click',function(){
+   var txt=(sm[k]||{}).result||'';
+   var title=titles[k];
+   var lines=txt.split('\n');
+   var aoa=[[db.company.name],[title,'Date: '+today()],[]];
+   lines.forEach(function(line){
+    if(!line.trim())return;
+    if(line.startsWith('|')){
+     var cells=line.split('|').filter(function(c){return c.trim()&&c.trim()!=='---'&&c.trim()!=='---:';});
+     if(cells.length>0)aoa.push(cells.map(function(c){
+      var v=c.trim().replace(/\*\*/g,'').replace(/\*/g,'');
+      var n=parseFloat(v.replace(/,/g,''));
+      return isNaN(n)?v:n;
+     }));
+    } else {
+     var cleanLine=line.replace(/^#{1,3}\s*/,'').replace(/\*\*/g,'').replace(/\*/g,'').trim();
+     if(cleanLine)aoa.push([cleanLine]);
+    }
+   });
+   exportXLS(aoa,title,title.replace(/\s/g,'_')+'_'+today());
+  });
+
+ }); // end forEach
+
  // ── Training Module Handlers ─────────────────────────────
  on('.trn-sc-card','click',function(el){
   trainingState.scenarioId=el.dataset.scid;
@@ -4404,7 +5029,12 @@ function bindEvents(){
  // Action buttons (PDF/Excel exports)
 
  on('[data-action]','click',function(el){window.xAction(el.dataset.action);});
- on('[data-nav]','click',function(el){view=el.dataset.nav;invView=cusView=supView=null;render();});
+ on('[data-nav]','click',function(el){
+  var newView=el.dataset.nav;
+  var reportPages=['trial','income','balance'];
+  if(reportPages.indexOf(newView)!==-1&&view!==newView)rptLoaded=false;
+  view=newView;invView=cusView=supView=null;render();
+ });
  on('[data-gotostmt]','click',function(el){fAcc=el.dataset.gotostmt;view='statement';render();});
 
  // Edit Journal Entry
