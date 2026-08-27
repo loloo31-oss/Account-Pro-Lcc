@@ -182,6 +182,7 @@ function normalizeDB(d){
  if(!d.costCenters)d.costCenters=[];
  if(!d.items)d.items=[];
  if(!d.purchaseInvoices)d.purchaseInvoices=[];
+ if(!d.purchaseOrders)d.purchaseOrders=[];
  if(!d.salesInvoices2)d.salesInvoices2=[];
  d.items.forEach(function(it){if(it.qty===undefined)it.qty=0;if(it.avgCost===undefined)it.avgCost=0;});
  if(!d.fixedAssets)d.fixedAssets=[];
@@ -598,7 +599,6 @@ var DEFAULT_ADMIN = {id:'admin',username:'admin',password:'admin123',name:'Admin
 function getUsers(){return db.users||[];}
 function getUserPerms(user){if(!user||user.role==='admin')return null;return user.perms||{};}
 function canDo(module,action){var actMap={view:'v',add:'a',edit:'e','delete':'d'};return can(module,actMap[action]||action);}
-function hashPwd(s){var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return Math.abs(h).toString(36);}
 function doLogout(){currentUser=null;clearSession();render();}
 
 
@@ -671,57 +671,38 @@ function pUsers(){
 
 // ── User modal ────────────────────────────────────────
 var MODULES=[
- {k:'coa',       l:'Chart of Accounts'},
- {k:'journal',   l:'Journal Entries'},
- {k:'invoice',   l:'Invoices'},
- {k:'receipt',   l:'Receipt Vouchers'},
- {k:'payment',   l:'Payment Vouchers'},
- {k:'trial',     l:'Trial Balance'},
- {k:'income',    l:'Income Statement'},
- {k:'balance',   l:'Balance Sheet'},
- {k:'statement', l:'Account Statement'},
- {k:'aging',     l:'Aging Reports'},
- {k:'customers', l:'Customers'},
- {k:'suppliers', l:'Suppliers'},
- {k:'costcenters',l:'Cost Centers'},
- {k:'settings',  l:'Settings'},
- {k:'users',     l:'Users'}
+ {k:'coa',          l:'Chart of Accounts'},
+ {k:'journal',      l:'Journal Entries'},
+ {k:'invoice',      l:'Invoices'},
+ {k:'receipt',      l:'Receipt Vouchers'},
+ {k:'payment',      l:'Payment Vouchers'},
+ {k:'trial',        l:'Trial Balance'},
+ {k:'income',       l:'Income Statement'},
+ {k:'balance',      l:'Balance Sheet'},
+ {k:'statement',    l:'Account Statement'},
+ {k:'agingAR',      l:'AR Aging'},
+ {k:'agingAP',      l:'AP Aging'},
+ {k:'taxSales',     l:'Sales Tax Report'},
+ {k:'taxPurchases', l:'Purchase Tax Report'},
+ {k:'customers',    l:'Customers'},
+ {k:'suppliers',    l:'Suppliers'},
+ {k:'items',        l:'Inventory Items'},
+ {k:'po',           l:'Purchase Orders'},
+ {k:'purchases',    l:'Purchases'},
+ {k:'sales2',       l:'Sales'},
+ {k:'stockrpt',     l:'Stock Report'},
+ {k:'fixedassets',  l:'Fixed Assets'},
+ {k:'costcenters',  l:'Cost Centers'},
+ {k:'settings',     l:'Settings'},
+ {k:'users',        l:'Users'}
 ];
 var ACTIONS=[
- {k:'view',  l:'View'},
- {k:'add',   l:'Add'},
- {k:'edit',  l:'Edit'},
- {k:'delete',l:'Delete'}
+ {k:'v', l:'View'},
+ {k:'a', l:'Add'},
+ {k:'e', l:'Edit'},
+ {k:'d', l:'Delete'}
 ];
 
-function mUser(){
- var u=tUser||{};
- var isEdit=!!u.editId;
- var perms=u.perms||{};
- var body='<div class="fr2">'+fld('Username *','<input id="u-uname" value="'+(u.username||'')+'" placeholder="e.g. john.doe">')+fld('Full Name *','<input id="u-name" value="'+(u.name||'')+'">')+'</div>';
- if(!isEdit)body+=fld('Password *','<input id="u-pwd" type="password" placeholder="Minimum 6 characters">');
- body+=fld('Role','<input id="u-role" value="'+(u.role||'Accountant')+'" placeholder="e.g. Accountant, Viewer">');
- body+='<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)">Access Permissions</div>';
- body+='<div style="margin-bottom:8px;display:flex;gap:8px">'
-  +'<button class="btn bsm bg0" id="btnPermAll">Full Access</button>'
-  +'<button class="btn bsm bg0" id="btnPermNone">No Access</button>'
-  +'<button class="btn bsm bg0" id="btnPermView">View Only</button>'
-  +'</div>';
- body+='<div class="tw"><table style="font-size:12px"><thead><tr>'
-  +'<th style="min-width:160px">Module</th>'
-  +ACTIONS.map(function(a){return '<th style="text-align:center;min-width:60px">'+a.l+'</th>';}).join('')
-  +'</tr></thead><tbody>';
- MODULES.forEach(function(m){
-  body+='<tr><td style="font-weight:500">'+m.l+'</td>';
-  ACTIONS.forEach(function(a){
-   var checked=(perms[m.k]&&perms[m.k][a.k])?'checked':'';
-   body+='<td style="text-align:center"><input type="checkbox" class="permBox" data-mod="'+m.k+'" data-act="'+a.k+'"'+(checked?' checked':'')+'></td>';
-  });
-  body+='</tr>';
- });
- body+='</tbody></table></div></div>';
- return wrap((isEdit?'Edit':'New')+' User',body,'mSaveUser','Save User');
-}
 
 function mChangePwd(){
  var u=tUser||{};
@@ -734,16 +715,19 @@ function mChangePwd(){
 
 
 // ── Permission helpers ───────────────────────────────────────
-function isAdmin(){return currentUser&&currentUser.role==='admin';}
+function isAdmin(){return currentUser&&(currentUser.role==='admin'||currentUser.username==='admin');}
 function can(mod,action){
  if(!currentUser)return false;
  if(isAdmin())return true;
  var p=currentUser.perms&&currentUser.perms[mod];
+ // If perms object is empty or missing — give full access (admin set no restrictions)
+ if(!currentUser.perms||Object.keys(currentUser.perms).length===0)return true;
  if(!p)return false;
- if(action==='v')return !!p.v;
- if(action==='a')return !!p.a;
- if(action==='e')return !!p.e;
- if(action==='d')return !!p.d;
+ // Support both short keys (v,a,e,d) and long keys (view,add,edit,delete)
+ if(action==='v')return !!(p.v||p.view||p[1]||p===true);
+ if(action==='a')return !!(p.a||p.add||p===true);
+ if(action==='e')return !!(p.e||p.edit||p===true);
+ if(action==='d')return !!(p.d||p.delete||p===true);
  return false;
 }
 function canView(mod){return can(mod,'v');}
@@ -861,6 +845,8 @@ function buildLayout(){
   {k:'statement',i:'doc',l:tr('nav_statement')},
   {k:'agingAR',i:'aging',l:tr('nav_agingar')+')'},
   {k:'agingAP',i:'aging',l:tr('nav_agingap')+')'},
+  {k:'taxSales',i:'rcpt',l:lang==='ar'?'تقرير ضريبة المبيعات':'Sales Tax Report'},
+  {k:'taxPurchases',i:'ainO',l:lang==='ar'?'تقرير ضريبة المشتريات':'Purchase Tax Report'},
   {sec:'Cost Centers'},
   {k:'costcenters',i:'scale',l:'Cost Centers ('+db.costCenters.filter(function(c){return c.active;}).length+')'},
   {k:'ccreport',i:'trend',l:'CC Report'},
@@ -870,8 +856,9 @@ function buildLayout(){
   {sec:tr('sec_settings')},
    {sec:'Inventory'},
   {k:'items',     i:'list',  l:'Items ('+(db.items||[]).length+')'},
-  {k:'purchases', i:'ainO',  l:'Purchases'},
-  {k:'sales2',    i:'rcpt',  l:'Sales'},
+  {k:'po',        i:'ainO',  l:lang==='ar'?'أوامر الشراء':'Purchase Orders'},
+  {k:'purchases', i:'ainO',  l:lang==='ar'?'فواتير المشتريات':'Purchases'},
+  {k:'sales2',    i:'rcpt',  l:lang==='ar'?'فواتير المبيعات':'Sales'},
   {k:'stockrpt',  i:'trend', l:'Stock Report'},
   {sec:'Fixed Assets'},
   {k:'fixedassets',i:'bank',l:'Assets ('+db.fixedAssets.length+')'},
@@ -886,7 +873,7 @@ function buildLayout(){
   if(n.sec)nav+='<div class="ns">'+n.sec+'</div>';
   else nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+n.k+'">'+ic(n.i)+' '+n.l+'</div>';
  });
- var pages={dashboard:pDashboard,training:pTraining,ai_settings:pAISettings,ai_bank:pAIBank,ai_analysis:pAIAnalysis,ai_cashflow:pAICashFlow,ai_forecast:pAIForecast,coa:pCOA,items:pItems,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
+ var pages={dashboard:pDashboard,training:pTraining,ai_settings:pAISettings,ai_bank:pAIBank,ai_analysis:pAIAnalysis,ai_cashflow:pAICashFlow,ai_forecast:pAIForecast,coa:pCOA,items:pItems,po:pPurchaseOrders,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,journal:pJournal,invoice:pInvoice,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,taxSales:pTaxSales,taxPurchases:pTaxPurchases,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport,users:pUsers};
  if(view==='fixedassets'&&tFA){return pAssetDetail();}
  var fn=pages[view]||pDashboard;
  var isAr=lang==='ar';
@@ -926,23 +913,31 @@ function fld(lbl,inp){return '<div class="fl"><label>'+lbl+'</label>'+inp+'</div
 // ── PAGES ────────────────────────────────────────────────────
 // ── Permission modules list ──────────────────────────────────
 var PERM_MODULES=[
- {k:'coa',      l:'Chart of Accounts',     actions:'vaed'},
- {k:'journal',  l:'Journal Entries',        actions:'vaed'},
- {k:'invoice',  l:'Tax Invoices',           actions:'vaed'},
- {k:'receipt',  l:'Receipt Vouchers',       actions:'vaed'},
- {k:'payment',  l:'Payment Vouchers',       actions:'vaed'},
- {k:'trial',    l:'Trial Balance',          actions:'v'},
- {k:'income',   l:'Income Statement',       actions:'v'},
- {k:'balance',  l:'Balance Sheet',          actions:'v'},
- {k:'statement',l:'Account Statement',      actions:'v'},
- {k:'agingAR',  l:'AR Aging',               actions:'v'},
- {k:'agingAP',  l:'AP Aging',               actions:'v'},
- {k:'customers',l:'Customers',              actions:'vaed'},
- {k:'suppliers',l:'Suppliers',              actions:'vaed'},
- {k:'costcenters',l:'Cost Centers',         actions:'vaed'},
- {k:'ccreport', l:'CC Report',              actions:'v'},
- {k:'settings', l:'Settings',              actions:'ve'},
- {k:'users',    l:'Users',                  actions:'vaed'}
+ {k:'coa',          l:'Chart of Accounts',      actions:'vaed'},
+ {k:'journal',      l:'Journal Entries',         actions:'vaed'},
+ {k:'invoice',      l:'Tax Invoices',            actions:'vaed'},
+ {k:'receipt',      l:'Receipt Vouchers',        actions:'vaed'},
+ {k:'payment',      l:'Payment Vouchers',        actions:'vaed'},
+ {k:'trial',        l:'Trial Balance',           actions:'v'},
+ {k:'income',       l:'Income Statement',        actions:'v'},
+ {k:'balance',      l:'Balance Sheet',           actions:'v'},
+ {k:'statement',    l:'Account Statement',       actions:'v'},
+ {k:'agingAR',      l:'AR Aging',                actions:'v'},
+ {k:'agingAP',      l:'AP Aging',                actions:'v'},
+ {k:'taxSales',     l:'Sales Tax Report',        actions:'v'},
+ {k:'taxPurchases', l:'Purchase Tax Report',     actions:'v'},
+ {k:'customers',    l:'Customers',               actions:'vaed'},
+ {k:'suppliers',    l:'Suppliers',               actions:'vaed'},
+ {k:'items',        l:'Inventory Items',         actions:'vaed'},
+ {k:'po',           l:'Purchase Orders',         actions:'vaed'},
+ {k:'purchases',    l:'Purchases',               actions:'vaed'},
+ {k:'sales2',       l:'Sales',                   actions:'vaed'},
+ {k:'stockrpt',     l:'Stock Report',            actions:'v'},
+ {k:'fixedassets',  l:'Fixed Assets',            actions:'vaed'},
+ {k:'costcenters',  l:'Cost Centers',            actions:'vaed'},
+ {k:'ccreport',     l:'CC Report',               actions:'v'},
+ {k:'settings',     l:'Settings',                actions:'ve'},
+ {k:'users',        l:'Users',                   actions:'vaed'}
 ];
 
 function pUsers(){
@@ -957,7 +952,7 @@ function pUsers(){
   +'<div class="met"><div class="mlab">Active</div><div class="mv pos">'+nonAdmin.filter(function(u){return u.active;}).length+'</div></div>'
   +'<div class="met"><div class="mlab">Inactive</div><div class="mv">'+nonAdmin.filter(function(u){return !u.active;}).length+'</div></div>'
   +'</div>';
- h+='<div class="card"><div class="tw"><table><thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Status</th><th style="min-width:90px"></th></tr></thead><tbody>';
+ h+='<div class="card"><div class="tw"><table><thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Status</th><th style="min-width:120px"></th></tr></thead><tbody>';
  db.users.forEach(function(u){
   var isAdm=u.role==='admin';
   h+='<tr>'
@@ -967,6 +962,7 @@ function pUsers(){
    +'<td><span class="b '+(u.active?'bgn':'bgr')+'">'+(u.active?'Active':'Inactive')+'</span></td>'
    +'<td><div style="display:flex;gap:3px">'
    +((!isAdm&&canEdit('users'))?'<button class="btn bsm bg0" data-edituser="'+u.id+'">'+ic('edit')+'</button>':'')
+   +((!isAdm&&canEdit('users'))?'<button class="btn bsm" style="font-size:10px;padding:2px 6px;background:#0F6E56;color:white;border:none" data-fullaccess="'+u.id+'" title="Grant Full Access">✅ Full</button>':'')
    +((!isAdm&&canDel('users'))?'<button class="btn bsm bg0 bdr" data-deluser="'+u.id+'">'+ic('del')+'</button>':'')
    +'</div></td>'
    +'</tr>';
@@ -990,9 +986,12 @@ function mUser(){
   +'</tr></thead><tbody>';
  PERM_MODULES.forEach(function(m){
   var p=(u.perms&&u.perms[m.k])||{};
+  // For new users, default all to checked
+  var defaultChecked=isNew;
   var mkCb=function(act){
    if(m.actions.indexOf(act)===-1)return '<td></td>';
-   return '<td style="text-align:center"><input type="checkbox" class="permCb" data-mod="'+m.k+'" data-act="'+act+'"'+(p[act]?' checked':'')+' style="width:16px;height:16px"></td>';
+   var checked=defaultChecked||(p[act]?true:false);
+   return '<td style="text-align:center"><input type="checkbox" class="permCb" data-mod="'+m.k+'" data-act="'+act+'"'+(checked?' checked':'')+' style="width:16px;height:16px"></td>';
   };
   permsHtml+='<tr><td style="font-weight:500">'+m.l+'</td>'+mkCb('v')+mkCb('a')+mkCb('e')+mkCb('d')+'</tr>';
  });
@@ -1308,6 +1307,7 @@ function mOpeningBalances(){
  return wrap('Opening Balances',body,'mSaveOB','Save Opening Balances');
 }
 
+function nextPO(){return 'PO-'+String((db.purchaseOrders||[]).length+1).padStart(4,'0');}
 function nextPI(){return 'PI-'+String((db.purchaseInvoices||[]).length+1).padStart(4,'0');}
 function nextSI(){return 'SI-'+String((db.salesInvoices2||[]).length+1).padStart(4,'0');}
 function nextItemId(){return 'IT-'+String((db.items||[]).length+1).padStart(3,'0');}
@@ -1370,6 +1370,92 @@ function pItems(){
  }
  return h+'</div>';
 }
+// ── PURCHASE ORDERS ──────────────────────────────────────────
+var tPO={};
+function pPurchaseOrders(){
+ var isAr=lang==='ar';
+ db.purchaseOrders=db.purchaseOrders||[];
+ var h=tb(isAr?'أوامر الشراء':'Purchase Orders',
+  '<button class="btn bp" data-action="addPO">'+ic('plus')+(isAr?' أمر شراء جديد':' New PO')+'</button>');
+ h+='<div class="pg">';
+ if(!db.purchaseOrders.length){
+  h+='<div style="text-align:center;padding:60px;color:var(--t3)"><div style="font-size:48px;margin-bottom:12px">📋</div><div>'+(isAr?'لا توجد أوامر شراء':'No purchase orders yet')+'</div></div>';
+ } else {
+  h+='<div class="card"><div class="tw"><table><thead><tr>'
+   +'<th>'+(isAr?'رقم الأمر':'PO #')+'</th><th>'+(isAr?'التاريخ':'Date')+'</th>'
+   +'<th>'+(isAr?'المورد':'Supplier')+'</th><th>'+(isAr?'تاريخ التسليم':'Delivery')+'</th>'
+   +'<th class="tr">'+(isAr?'الإجمالي':'Total')+'</th><th>'+(isAr?'الحالة':'Status')+'</th><th></th>'
+   +'</tr></thead><tbody>';
+  db.purchaseOrders.slice().reverse().forEach(function(po){
+   var total=(po.items||[]).reduce(function(s,i){return s+i.qty*i.price;},0);
+   var statusColor={Draft:'var(--t2)',Sent:'#185FA5',Received:'#0F6E56',Cancelled:'#b91c1c'}[po.status]||'var(--t2)';
+   var statusAr={Draft:'مسودة',Sent:'مُرسَل',Received:'مُستَلَم',Cancelled:'ملغي'}[po.status]||po.status;
+   h+='<tr>'
+    +'<td><strong>'+po.id+'</strong></td>'
+    +'<td>'+po.date+'</td>'
+    +'<td>'+(po.supplierName||'—')+'</td>'
+    +'<td>'+(po.deliveryDate||'—')+'</td>'
+    +'<td class="tr mn">'+N(total)+'</td>'
+    +'<td><span style="color:'+statusColor+';font-weight:600">'+(isAr?statusAr:po.status)+'</span></td>'
+    +'<td style="white-space:nowrap">'
+    +'<button class="btn bsm" data-action="editPO" data-id="'+po.id+'">✏️</button>'
+    +'<button class="btn bsm" data-action="printPO" data-id="'+po.id+'">🖨️</button>'
+    +'<button class="btn bsm bdr" data-action="delPO" data-id="'+po.id+'">🗑️</button>'
+    +'</td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+ }
+ h+='</div>';
+ return h;
+}
+
+function mPurchaseOrder(){
+ var isAr=lang==='ar';
+ var po=tPO;
+ var suppliers=db.suppliers||[];
+ var items=po.items||[{desc:'',qty:1,price:0,vat:15}];
+ var statusOpts=['Draft','Sent','Received','Cancelled'];
+
+ var supOpts=suppliers.map(function(s){
+  return '<option value="'+s.id+'"'+(s.id===po.supplierId?' selected':'')+'>'+s.name+'</option>';
+ }).join('');
+
+ var itemRows=items.map(function(it,i){
+  return '<tr>'
+   +'<td><input class="poDesc" data-i="'+i+'" value="'+(it.desc||'')+'" style="width:100%;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px" placeholder="'+(isAr?'وصف البند':'Item description')+'"></td>'
+   +'<td><input class="poQty" data-i="'+i+'" type="number" value="'+(it.qty||1)+'" min="1" style="width:70px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input class="poPrice" data-i="'+i+'" type="number" value="'+(it.price||0)+'" min="0" step="0.01" style="width:100px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input class="poVat" data-i="'+i+'" type="number" value="'+(it.vat||15)+'" min="0" style="width:60px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td class="tr mn poLineTotal" data-i="'+i+'">'+(it.qty&&it.price?N(it.qty*it.price):'')+'</td>'
+   +'<td><button class="btn bsm bdr poDelRow" data-i="'+i+'">×</button></td>'
+   +'</tr>';
+ }).join('');
+
+ var body=''
+  +'<div class="fr2">'
+  +fld(isAr?'رقم الأمر *':'PO # *','<input id="po-id" value="'+(po.id||nextPO())+'">')
+  +fld(isAr?'التاريخ *':'Date *','<input type="date" id="po-date" value="'+(po.date||today())+'">')
+  +'</div>'
+  +'<div class="fr2">'
+  +fld(isAr?'المورد *':'Supplier *','<select id="po-sup"><option value="">— '+(isAr?'اختر':'Select')+' —</option>'+supOpts+'</select>')
+  +fld(isAr?'تاريخ التسليم المتوقع':'Expected Delivery','<input type="date" id="po-delivery" value="'+(po.deliveryDate||'')+'">')
+  +'</div>'
+  +'<div class="fr2">'
+  +fld(isAr?'الحالة':'Status','<select id="po-status">'+statusOpts.map(function(s){var ar={Draft:'مسودة',Sent:'مُرسَل',Received:'مُستَلَم',Cancelled:'ملغي'}[s];return '<option value="'+s+'"'+(s===(po.status||'Draft')?' selected':'')+'>'+s+(isAr?' — '+ar:'')+'</option>';}).join('')+'</select>')
+  +fld(isAr?'ملاحظات':'Notes','<input id="po-notes" value="'+(po.notes||'')+'">')
+  +'</div>'
+  +'<div style="margin:10px 0 6px;font-weight:600;font-size:13px">'+(isAr?'بنود الأمر':'Order Items')+'</div>'
+  +'<div class="tw" style="overflow-x:auto"><table id="poItemsTable" style="width:100%"><thead><tr>'
+  +'<th>'+(isAr?'الوصف':'Description')+'</th><th>'+(isAr?'الكمية':'Qty')+'</th>'
+  +'<th>'+(isAr?'سعر الوحدة':'Unit Price')+'</th><th>'+(isAr?'الضريبة %':'VAT%')+'</th>'
+  +'<th class="tr">'+(isAr?'الإجمالي':'Total')+'</th><th></th>'
+  +'</tr></thead><tbody id="poItemsBody">'+itemRows+'</tbody></table></div>'
+  +'<button class="btn bsm" id="poAddRow" style="margin-top:6px">+ '+(isAr?'إضافة بند':'Add Item')+'</button>'
+  +'<div id="poTotals" style="margin-top:12px;text-align:left;background:var(--bg);border-radius:var(--r);padding:10px 14px"></div>';
+
+ return wrap((po.editId?'Edit PO: '+po.id:(isAr?'أمر شراء جديد':'New Purchase Order')),body,'mSavePO',isAr?'حفظ أمر الشراء':'Save PO');
+}
+
 function pPurchases(){
  var pis=db.purchaseInvoices||[];
  var h=tb('Purchase Invoices','<button class="btn bp" data-action="addPI">'+ic('plus')+' New Purchase</button><button class="btn bdr" data-action="addPR">'+ic('plus')+' Purchase Return</button><button class="btn" data-action="xlsPI">'+ic('dn')+' Excel</button>');
@@ -1558,14 +1644,24 @@ function mItem(){
 
 function mPurchaseInvoice(isReturn){
  var pi=tPI;
- var title=(isReturn?'Purchase Return':'Purchase Invoice');
+ var isAr=lang==='ar';
+ var title=(isReturn?(isAr?'مرتجع مشتريات':'Purchase Return'):(isAr?'فاتورة مشتريات':'Purchase Invoice'));
  var sups=db.suppliers||[];
+ var pos=(db.purchaseOrders||[]).filter(function(p){return p.status!=='Cancelled';});
+
+ // PO selector
+ var poOpts='<option value="">— '+(isAr?'اختر أمر الشراء (اختياري)':'Select PO (optional)')+' —</option>'
+  +pos.map(function(p){return '<option value="'+p.id+'"'+(p.id===pi.poId?' selected':'')+'>'+p.id+' — '+(p.supplierName||'')+'</option>';}).join('');
+
  var body='<div class="fr2">'
-  +fld('Ref #','<input id="pi-id" value="'+(pi.id||nextPI())+'">')
-  +fld('Date *','<input type="date" id="pi-date" value="'+(pi.date||today())+'">')
-  +'</div><div class="fr2">'
-  +fld('Supplier','<select id="pi-sup"><option value="">— Select —</option>'+sups.map(function(s){return '<option value="'+s.id+'"'+(s.id===pi.supplierId?' selected':'')+'>'+s.name+'</option>';}).join('')+'</select>')
-  +fld('Ref / PO #','<input id="pi-ref" value="'+(pi.ref||'')+'">')
+  +fld(isAr?'رقم الفاتورة':'Ref #','<input id="pi-id" value="'+(pi.id||nextPI())+'">')
+  +fld(isAr?'التاريخ *':'Date *','<input type="date" id="pi-date" value="'+(pi.date||today())+'">')
+  +'</div>'
+  +'<div class="fr2">'
+  +fld(isAr?'المورد':'Supplier','<select id="pi-sup"><option value="">— Select —</option>'+sups.map(function(s){return '<option value="'+s.id+'"'+(s.id===pi.supplierId?' selected':'')+'>'+s.name+'</option>';}).join('')+'</select>')
+  +fld(isAr?'رقم فاتورة المورد':'Supplier Invoice #','<input id="pi-supinv" value="'+(pi.supplierInvNo||'')+'" placeholder="'+(isAr?'رقم فاتورة المورد':'Supplier invoice number')+'">')
+  +'</div>'
+  +fld(isAr?'أمر الشراء المرجعي':'Reference PO','<select id="pi-po" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px">'+poOpts+'</select>')
   +'</div>';
  // Lines
  body+='<div class="ct" style="margin:10px 0 6px">Items</div>';
@@ -1587,21 +1683,42 @@ function mPurchaseInvoice(isReturn){
    +'</tr>';
  });
  body+='</tbody></table></div>';
- body+='<button class="btn" id="piAddLine" style="margin-top:8px">+ Add Line</button>';
- body+='<div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:var(--r);text-align:right">'
-  +'<span style="font-size:12px;color:var(--t2)">Subtotal: </span><span id="piSubtotal" class="mn">0.00</span>'
-  +'&nbsp;&nbsp;<span style="font-size:12px;color:var(--t2)">VAT: </span><span id="piVat" class="mn">0.00</span>'
-  +'&nbsp;&nbsp;<strong>Total: </strong><span id="piTotal" class="mn" style="font-size:16px">0.00</span></div>';
- body+=fld('Notes','<input id="pi-notes" value="'+(pi.notes||'')+'">');
- return wrap(title,body,'mSavePI','Save Invoice');
+ body+='<button class="btn" id="piAddLine" style="margin-top:8px">+ '+(isAr?'إضافة بند':'Add Line')+'</button>';
+ body+='<div style="margin-top:12px;padding:12px;background:var(--bg);border-radius:var(--r)">'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'الإجمالي قبل الخصم:':'Subtotal:')+'</span>'
+  +'<span id="piSubtotal" class="mn" style="min-width:100px;text-align:left">0.00</span>'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'نسبة الخصم %:':'Discount %:')+'</span>'
+  +'<input id="pi-discpct" type="number" value="'+(pi.discPct||0)+'" min="0" max="100" step="0.01" style="width:80px;padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;text-align:center">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'أو مبلغ الخصم:':'Or Discount Amt:')+'</span>'
+  +'<input id="pi-discamt" type="number" value="'+(pi.discAmt||0)+'" min="0" step="0.01" style="width:100px;padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;text-align:center">'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'الخصم:':'Discount:')+'</span>'
+  +'<span id="piDiscVal" class="mn" style="min-width:100px;text-align:left;color:#b91c1c">0.00</span>'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">VAT:</span>'
+  +'<span id="piVat" class="mn" style="min-width:100px;text-align:left">0.00</span>'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--bd);padding-top:8px;justify-content:flex-end">'
+  +'<strong>'+(isAr?'الإجمالي:':'Total:')+'</strong>'
+  +'<span id="piTotal" class="mn" style="font-size:16px;min-width:100px;text-align:left">0.00</span>'
+  +'</div>'
+  +'</div>';
+ body+=fld(isAr?'ملاحظات':'Notes','<input id="pi-notes" value="'+(pi.notes||'')+'">');
+ return wrap(title,body,'mSavePI',isAr?'حفظ الفاتورة':'Save Invoice');
 }
 
 function mSalesInvoice(isReturn){
  var si=tSI;
- var title=(isReturn?'Sales Return':'Sales Invoice');
+ var isAr=lang==='ar';
+ var title=(isReturn?(isAr?'مرتجع مبيعات':'Sales Return'):(isAr?'فاتورة مبيعات':'Sales Invoice'));
  var custs=db.customers||[];
  var body='<div class="fr2">'
-  +fld('Ref #','<input id="si-id" value="'+(si.id||nextSI())+'">')
+  +fld(isAr?'رقم الفاتورة':'Ref #','<input id="si-id" value="'+(si.id||nextSI())+'">')
   +fld('Date *','<input type="date" id="si-date" value="'+(si.date||today())+'">')
   +'</div><div class="fr2">'
   +fld('Customer','<select id="si-cus"><option value="">— Select —</option>'+custs.map(function(c){return '<option value="'+c.id+'"'+(c.id===si.customerId?' selected':'')+'>'+c.name+'</option>';}).join('')+'</select>')
@@ -1626,13 +1743,40 @@ function mSalesInvoice(isReturn){
    +'</tr>';
  });
  body+='</tbody></table></div>';
- body+='<button class="btn" id="siAddLine" style="margin-top:8px">+ Add Line</button>';
- body+='<div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:var(--r);text-align:right">'
-  +'<span style="font-size:12px;color:var(--t2)">Subtotal: </span><span id="siSubtotal" class="mn">0.00</span>'
-  +'&nbsp;&nbsp;<span style="font-size:12px;color:var(--t2)">VAT: </span><span id="siVat" class="mn">0.00</span>'
-  +'&nbsp;&nbsp;<strong>Total: </strong><span id="siTotal" class="mn" style="font-size:16px">0.00</span></div>';
- body+=fld('Notes','<input id="si-notes" value="'+(si.notes||'')+'">');
- return wrap(title,body,'mSaveSI','Save Invoice');
+ body+='<button class="btn" id="siAddLine" style="margin-top:8px">+ '+(isAr?'إضافة بند':'Add Line')+'</button>';
+ // Customer advance accounts
+ var cusAcc=si.customerId?db.customers.find(function(c){return c.id===si.customerId;}):null;
+ var advAccs=(db.accounts||[]).filter(function(a){return a.type==='Liability'&&!a.isMain;});
+ var advOpts='<option value="">— '+(isAr?'اختر حساب الدفعة المقدمة':'Select Advance Account')+' —</option>'
+  +advAccs.map(function(a){return '<option value="'+a.id+'"'+(a.id===si.advAccId?' selected':'')+'>'+a.id+' - '+accN(a)+'</option>';}).join('');
+
+ body+='<div style="margin-top:12px;padding:12px;background:var(--bg);border-radius:var(--r)">'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'الإجمالي قبل الخصم:':'Subtotal:')+'</span>'
+  +'<span id="siSubtotal" class="mn" style="min-width:100px;text-align:left">0.00</span>'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'نسبة الخصم %:':'Discount %:')+'</span>'
+  +'<input id="si-discpct" type="number" value="'+(si.discPct||0)+'" min="0" max="100" step="0.01" style="width:80px;padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;text-align:center">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'أو مبلغ الخصم:':'Or Discount Amt:')+'</span>'
+  +'<input id="si-discamt" type="number" value="'+(si.discAmt||0)+'" min="0" step="0.01" style="width:100px;padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;text-align:center">'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">'+(isAr?'خصم الدفعة المقدمة:':'Advance Payment Deduction:')+'</span>'
+  +'<input id="si-advamt" type="number" value="'+(si.advAmt||0)+'" min="0" step="0.01" style="width:110px;padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;text-align:center">'
+  +'<select id="si-advacc" style="padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px">'+advOpts+'</select>'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:flex-end">'
+  +'<span style="font-size:12px;color:var(--t2)">VAT:</span>'
+  +'<span id="siVat" class="mn" style="min-width:100px;text-align:left">0.00</span>'
+  +'</div>'
+  +'<div style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--bd);padding-top:8px;justify-content:flex-end">'
+  +'<strong>'+(isAr?'الصافي المستحق:':'Net Payable:')+'</strong>'
+  +'<span id="siTotal" class="mn" style="font-size:16px;min-width:100px;text-align:left">0.00</span>'
+  +'</div>'
+  +'</div>';
+ body+=fld(isAr?'ملاحظات':'Notes','<input id="si-notes" value="'+(si.notes||'')+'">');
+ return wrap(title,body,'mSaveSI',isAr?'حفظ الفاتورة':'Save Invoice');
 }
 
 
@@ -2730,9 +2874,15 @@ function updatePITotals(){
   var td=document.querySelector('.piLineTotal[data-i="'+i+'"]');
   if(td)td.textContent=N(line);
  });
+ // Discount
+ var discPct=Number((document.getElementById('pi-discpct')||{}).value)||0;
+ var discAmt=Number((document.getElementById('pi-discamt')||{}).value)||0;
+ var disc=discPct>0?(sub*discPct/100):discAmt;
+ var netSub=sub-disc;
  var sEl=document.getElementById('piSubtotal');if(sEl)sEl.textContent=N(sub);
+ var dEl=document.getElementById('piDiscVal');if(dEl)dEl.textContent=N(disc);
  var vEl=document.getElementById('piVat');if(vEl)vEl.textContent=N(vat);
- var tEl=document.getElementById('piTotal');if(tEl)tEl.textContent=N(sub+vat);
+ var tEl=document.getElementById('piTotal');if(tEl)tEl.textContent=N(netSub+vat);
 }
 function updateSITotals(){
  var sub=0,vat=0;
@@ -2746,10 +2896,16 @@ function updateSITotals(){
   var td=document.querySelector('.siLineTotal[data-i="'+i+'"]');
   if(td)td.textContent=N(line);
  });
+ var discPct=Number((document.getElementById('si-discpct')||{}).value)||0;
+ var discAmt=Number((document.getElementById('si-discamt')||{}).value)||0;
+ var advAmt=Number((document.getElementById('si-advamt')||{}).value)||0;
+ var disc=discPct>0?(sub*discPct/100):discAmt;
+ var netPayable=sub-disc+vat-advAmt;
  var sEl=document.getElementById('siSubtotal');if(sEl)sEl.textContent=N(sub);
  var vEl=document.getElementById('siVat');if(vEl)vEl.textContent=N(vat);
- var tEl=document.getElementById('siTotal');if(tEl)tEl.textContent=N(sub+vat);
+ var tEl=document.getElementById('siTotal');if(tEl)tEl.textContent=N(netPayable);
 }
+
 
 function buildFilterBar(){
  var f2=rptFrom||'',t2=rptTo||'',lv2=rptLevel||'all';
@@ -3094,6 +3250,103 @@ function agingCalc(ents,getItems){
 function pAgingAR(){var h=tb(tr('nav_agingar')+')','<button class="btn" data-action="xlsAR">'+ic('dn')+' Excel</button><button class="btn" data-action="pdfAR">'+ic('prt')+' PDF</button>');return h+'<div class="pg">'+agingCalc(db.customers,function(c){return db.invoices.filter(function(i){return (i.clientId===c.id||i.client===c.name)&&!i.paid;});})+'</div>';}
 function pAgingAP(){var h=tb(tr('nav_agingap')+')','<button class="btn" data-action="xlsAP">'+ic('dn')+' Excel</button><button class="btn" data-action="pdfAP">'+ic('prt')+' PDF</button>');return h+'<div class="pg">'+agingCalc(db.suppliers,function(s){if(!s.linkedAccId)return[];var t=[];db.journals.forEach(function(je){je.lines.forEach(function(l){if(l.acc===s.linkedAccId&&l.cr>0)t.push({date:je.date,amount:l.cr});});});return t;})+'</div>';}
 
+// ── TAX REPORTS ──────────────────────────────────────────────
+function pTaxSales(){
+ var isAr=lang==='ar';
+ var h=tb(isAr?'تقرير فواتير المبيعات الضريبية':'Sales Tax Report',
+  '<button class="btn" data-action="xlsTaxSales">'+ic('dn')+' Excel</button>');
+ h+='<div class="pg">';
+ var invoices=(db.salesInvoices2||[]).filter(function(i){return i.type!=='return';});
+ if(!invoices.length){
+  h+='<div style="text-align:center;padding:40px;color:var(--t3)">'+(isAr?'لا توجد فواتير مبيعات':'No sales invoices')+'</div>';
+ } else {
+  var totalPre=0,totalVat=0,totalPost=0;
+  h+='<div class="card"><div class="tw"><table><thead><tr>'
+   +'<th>'+(isAr?'رقم الفاتورة':'Invoice #')+'</th>'
+   +'<th>'+(isAr?'التاريخ':'Date')+'</th>'
+   +'<th>'+(isAr?'اسم العميل':'Customer')+'</th>'
+   +'<th>'+(isAr?'رقم ضريبة العميل':'Customer VAT #')+'</th>'
+   +'<th class="tr">'+(isAr?'قبل الضريبة':'Before VAT')+'</th>'
+   +'<th class="tr">'+(isAr?'الضريبة':'VAT')+'</th>'
+   +'<th class="tr">'+(isAr?'بعد الضريبة':'After VAT')+'</th>'
+   +'</tr></thead><tbody>';
+  invoices.forEach(function(inv){
+   var cus=db.customers.find(function(c){return c.id===inv.customerId;});
+   var vatNo=cus?cus.vatNo:inv.vatNo||'—';
+   var pre=inv.subtotal||(inv.lines||[]).reduce(function(s,l){return s+l.qty*l.price;},0);
+   var vat2=inv.vat||(inv.lines||[]).reduce(function(s,l){return s+l.qty*l.price*(l.vat||0)/100;},0);
+   var post=pre+vat2;
+   totalPre+=pre;totalVat+=vat2;totalPost+=post;
+   h+='<tr>'
+    +'<td><strong>'+inv.id+'</strong></td>'
+    +'<td>'+inv.date+'</td>'
+    +'<td>'+inv.customerName+'</td>'
+    +'<td style="font-size:11px">'+vatNo+'</td>'
+    +'<td class="tr mn">'+N(pre)+'</td>'
+    +'<td class="tr mn" style="color:#B45309">'+N(vat2)+'</td>'
+    +'<td class="tr mn" style="font-weight:600">'+N(post)+'</td>'
+    +'</tr>';
+  });
+  h+='<tr style="font-weight:700;background:var(--bg)">'
+   +'<td colspan="4">'+(isAr?'الإجمالي':'Total')+'</td>'
+   +'<td class="tr mn">'+N(totalPre)+'</td>'
+   +'<td class="tr mn" style="color:#B45309">'+N(totalVat)+'</td>'
+   +'<td class="tr mn">'+N(totalPost)+'</td>'
+   +'</tr>';
+  h+='</tbody></table></div></div>';
+ }
+ h+='</div>';return h;
+}
+
+function pTaxPurchases(){
+ var isAr=lang==='ar';
+ var h=tb(isAr?'تقرير فواتير المشتريات الضريبية':'Purchase Tax Report',
+  '<button class="btn" data-action="xlsTaxPurchases">'+ic('dn')+' Excel</button>');
+ h+='<div class="pg">';
+ var invoices=(db.purchaseInvoices||[]).filter(function(i){return i.type!=='return';});
+ if(!invoices.length){
+  h+='<div style="text-align:center;padding:40px;color:var(--t3)">'+(isAr?'لا توجد فواتير مشتريات':'No purchase invoices')+'</div>';
+ } else {
+  var totalPre=0,totalVat=0,totalPost=0;
+  h+='<div class="card"><div class="tw"><table><thead><tr>'
+   +'<th>'+(isAr?'رقم الفاتورة':'Invoice #')+'</th>'
+   +'<th>'+(isAr?'التاريخ':'Date')+'</th>'
+   +'<th>'+(isAr?'اسم المورد':'Supplier')+'</th>'
+   +'<th>'+(isAr?'رقم ضريبة المورد':'Supplier VAT #')+'</th>'
+   +'<th>'+(isAr?'رقم فاتورة المورد':'Supplier Inv #')+'</th>'
+   +'<th class="tr">'+(isAr?'قبل الضريبة':'Before VAT')+'</th>'
+   +'<th class="tr">'+(isAr?'الضريبة':'VAT')+'</th>'
+   +'<th class="tr">'+(isAr?'بعد الضريبة':'After VAT')+'</th>'
+   +'</tr></thead><tbody>';
+  invoices.forEach(function(inv){
+   var sup=db.suppliers.find(function(s){return s.id===inv.supplierId;});
+   var vatNo=sup?sup.vatNo:'—';
+   var pre=inv.subtotal||(inv.lines||[]).reduce(function(s,l){return s+l.qty*l.cost;},0);
+   var vat2=inv.vat||(inv.lines||[]).reduce(function(s,l){return s+l.qty*l.cost*(l.vat||0)/100;},0);
+   var post=pre+vat2;
+   totalPre+=pre;totalVat+=vat2;totalPost+=post;
+   h+='<tr>'
+    +'<td><strong>'+inv.id+'</strong></td>'
+    +'<td>'+inv.date+'</td>'
+    +'<td>'+inv.supplierName+'</td>'
+    +'<td style="font-size:11px">'+vatNo+'</td>'
+    +'<td style="font-size:11px">'+(inv.supplierInvNo||'—')+'</td>'
+    +'<td class="tr mn">'+N(pre)+'</td>'
+    +'<td class="tr mn" style="color:#B45309">'+N(vat2)+'</td>'
+    +'<td class="tr mn" style="font-weight:600">'+N(post)+'</td>'
+    +'</tr>';
+  });
+  h+='<tr style="font-weight:700;background:var(--bg)">'
+   +'<td colspan="5">'+(isAr?'الإجمالي':'Total')+'</td>'
+   +'<td class="tr mn">'+N(totalPre)+'</td>'
+   +'<td class="tr mn" style="color:#B45309">'+N(totalVat)+'</td>'
+   +'<td class="tr mn">'+N(totalPost)+'</td>'
+   +'</tr>';
+  h+='</tbody></table></div></div>';
+ }
+ h+='</div>';return h;
+}
+
 function contactCard(c,isSup){
  var la=c.linkedAccId?db.accounts.find(function(a){return a.id===c.linkedAccId;}):null;
  var type=isSup?'sup':'cus';
@@ -3248,7 +3501,7 @@ function pSettings(){
 
 // ═══ MODALS ══════════════════════════════════════════════════
 function buildModal(){
- var fns={acc:mAcc,item:mItem,pi:function(){return mPurchaseInvoice(tPI.isReturn);},si:function(){return mSalesInvoice(tSI.isReturn);},je:mJE,inv:mInv,cus:mContact,sup:mContact,rcpt:mVoucher,pymt:mVoucher,cc:mCC,user:mUser,chpwd:mChangePwd,fa:mFA,at:mAddTransaction,loc:mLocation,ob:mOpeningBalances};
+ var fns={acc:mAcc,item:mItem,po:mPurchaseOrder,pi:function(){return mPurchaseInvoice(tPI.isReturn);},si:function(){return mSalesInvoice(tSI.isReturn);},je:mJE,inv:mInv,cus:mContact,sup:mContact,rcpt:mVoucher,pymt:mVoucher,cc:mCC,user:mUser,chpwd:mChangePwd,fa:mFA,at:mAddTransaction,loc:mLocation,ob:mOpeningBalances};
  var fn=fns[modal];return fn?fn():'';
 }
 function wrap(title,body,saveId,saveLabel){
@@ -3397,6 +3650,29 @@ window.xAction=function(type){
  if(type==='switchCo'){currentCompanyId=null;appState='selectCompany';render();return;}
  // Inventory actions
  if(type==='addItem'){tItem={};modal='item';render();return;}
+ if(type==='xlsTaxSales'){
+  var aoa=[['Sales Tax Report'],[db.company.name],['Date: '+today()],[],['Invoice #','Date','Customer','Customer VAT #','Before VAT','VAT','After VAT']];
+  (db.salesInvoices2||[]).filter(function(i){return i.type!=='return';}).forEach(function(inv){
+   var cus=db.customers.find(function(c){return c.id===inv.customerId;});
+   var vatNo=cus?cus.vatNo:'—';
+   var pre=inv.subtotal||0;var vat2=inv.vat||0;
+   aoa.push([inv.id,inv.date,inv.customerName,vatNo,pre,vat2,pre+vat2]);
+  });
+  exportXLS(aoa,'Sales Tax','Sales_Tax_'+today());return;
+ }
+ if(type==='xlsTaxPurchases'){
+  var aoa2=[['Purchase Tax Report'],[db.company.name],['Date: '+today()],[],['Invoice #','Date','Supplier','Supplier VAT #','Supplier Inv #','Before VAT','VAT','After VAT']];
+  (db.purchaseInvoices||[]).filter(function(i){return i.type!=='return';}).forEach(function(inv){
+   var sup=db.suppliers.find(function(s){return s.id===inv.supplierId;});
+   var vatNo=sup?sup.vatNo:'—';
+   var pre=inv.subtotal||0;var vat2=inv.vat||0;
+   aoa2.push([inv.id,inv.date,inv.supplierName,vatNo,inv.supplierInvNo||'—',pre,vat2,pre+vat2]);
+  });
+  exportXLS(aoa2,'Purchase Tax','Purchase_Tax_'+today());return;
+ }
+ if(type==='addPO'){tPO={};modal='po';render();return;}
+ if(type==='editPO'){var pid=document.querySelector('[data-action="editPO"]')&&event&&event.target?event.target.closest('[data-id]')&&event.target.closest('[data-id]').dataset.id:'';var po2=pid?(db.purchaseOrders||[]).find(function(p){return p.id===pid;}):null;if(po2){tPO=Object.assign({},po2,{editId:po2.id});modal='po';render();}return;}
+ if(type==='delPO'){var did=event&&event.target?event.target.closest('[data-id]')&&event.target.closest('[data-id]').dataset.id:'';if(did&&confirm('Delete PO '+did+'?')){db.purchaseOrders=(db.purchaseOrders||[]).filter(function(p){return p.id!==did;});saveDb();render();}return;}
  if(type==='addPI'){tPI={isReturn:false};modal='pi';render();return;}
  if(type==='addPR'){tPI={isReturn:true};modal='pi';render();return;}
  if(type==='addSI'){tSI={isReturn:false};modal='si';render();return;}
@@ -4315,13 +4591,16 @@ function bindEvents(){
   });
   if(tUser.editId){
    var u=(db.users||[]).find(function(x){return x.id===tUser.editId;});
-   if(u)Object.assign(u,{username:uname,name:name,role:role,perms:perms});
+   if(u){
+    Object.assign(u,{username:uname,name:name,role:role,perms:perms});
+    if(pwd&&pwd.length>=6){u.passwordHash=hashPwd(pwd);delete u.password;}
+   }
   } else {
    if(!pwd||pwd.length<6){alert('Password must be at least 6 characters.');return;}
    var exists=(db.users||[]).find(function(x){return x.username===uname;});
    if(exists){alert('Username already exists.');return;}
    db.users=db.users||[];
-   db.users.push({id:'u'+Date.now(),username:uname,name:name,role:role,password:hashPwd(pwd),active:true,perms:perms});
+   db.users.push({id:'u'+Date.now(),username:uname,name:name,role:role,passwordHash:hashPwd(pwd),active:true,perms:perms});
   }
   modal=null;save();render();
  });
@@ -4336,7 +4615,7 @@ function bindEvents(){
    alert('Admin password updated successfully.');
   } else {
    var u=(db.users||[]).find(function(x){return x.id===tUser.editId;});
-   if(u)u.password=hashPwd(newpwd);
+   if(u){u.passwordHash=hashPwd(newpwd);delete u.password;}
    save();
   }
   modal=null;render();
@@ -4565,11 +4844,41 @@ function bindEvents(){
  on('.piVat','change',function(){updatePITotals();});
  on('[data-rmpiline]','click',function(el){var tr=document.getElementById('pil-'+el.dataset.rmpiline);if(tr)tr.remove();updatePITotals();});
  on1('piAddLine','click',function(){var tb2=document.getElementById('piLines');if(!tb2)return;var i=tb2.querySelectorAll('tr').length;var tr=document.createElement('tr');tr.id='pil-'+i;tr.innerHTML='<td><select class="piItem" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"><option value="">— Item —</option>'+(db.items||[]).map(function(it){return '<option value="'+it.id+'">'+it.id+' - '+it.name+'</option>';}).join('')+'</select></td><td><input type="number" class="piQty" data-i="'+i+'" value="1" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"></td><td><input type="number" class="piCost" data-i="'+i+'" value="0" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"></td><td><select class="piVat" data-i="'+i+'" style="width:100%;padding:5px;border:1px solid var(--bd2);border-radius:var(--r)"><option>0%</option><option>5%</option><option selected>15%</option></select></td><td class="tr piLineTotal" data-i="'+i+'" style="padding:5px">0.00</td><td><button class="btn bsm bdr" data-rmpiline="'+i+'">✕</button></td>';tb2.appendChild(tr);});
+ on1('mSavePO','click',function(){
+  var id2=(document.getElementById('po-id')||{}).value||nextPO();
+  var date2=(document.getElementById('po-date')||{}).value||today();
+  var supId2=(document.getElementById('po-sup')||{}).value||'';
+  var sup2=supId2?(db.suppliers||[]).find(function(s){return s.id===supId2;}):null;
+  var delivery2=(document.getElementById('po-delivery')||{}).value||'';
+  var status2=(document.getElementById('po-status')||{}).value||'Draft';
+  var notes2=(document.getElementById('po-notes')||{}).value||'';
+  var items2=[];
+  document.querySelectorAll('#poItemsBody tr').forEach(function(tr,i){
+   var desc=(tr.querySelector('.poDesc')||{}).value||'';
+   var qty=Number((tr.querySelector('.poQty')||{}).value)||1;
+   var price=Number((tr.querySelector('.poPrice')||{}).value)||0;
+   var vat2=Number((tr.querySelector('.poVat')||{}).value)||15;
+   if(desc||price)items2.push({desc:desc,qty:qty,price:price,vat:vat2});
+  });
+  db.purchaseOrders=db.purchaseOrders||[];
+  if(tPO.editId){
+   var idx=db.purchaseOrders.findIndex(function(p){return p.id===tPO.editId;});
+   if(idx>=0)db.purchaseOrders[idx]={id:id2,date:date2,supplierId:supId2,supplierName:sup2?sup2.name:'',deliveryDate:delivery2,status:status2,notes:notes2,items:items2};
+  } else {
+   db.purchaseOrders.push({id:id2,date:date2,supplierId:supId2,supplierName:sup2?sup2.name:'',deliveryDate:delivery2,status:status2,notes:notes2,items:items2});
+  }
+  saveDb();modal=null;view='po';render();
+ });
+
  on1('mSavePI','click',function(){
   var id3=((document.getElementById('pi-id')||{}).value||'').trim()||nextPI();
   var dt3=((document.getElementById('pi-date')||{}).value||today());
   var supId=(document.getElementById('pi-sup')||{}).value||'';
   var supNm=supId?((db.suppliers||[]).find(function(s){return s.id===supId;})||{name:''}).name:'';
+  var supInvNo=((document.getElementById('pi-supinv')||{}).value||'').trim();
+  var poId3=((document.getElementById('pi-po')||{}).value||'').trim();
+  var discPct3=Number((document.getElementById('pi-discpct')||{}).value)||0;
+  var discAmt3=Number((document.getElementById('pi-discamt')||{}).value)||0;
   var lines3=[];
   document.querySelectorAll('.piItem').forEach(function(sel){
    var i4=sel.dataset.i;var itemId=sel.value;if(!itemId)return;
@@ -4582,9 +4891,12 @@ function bindEvents(){
   if(!lines3.length){alert('Add at least one item.');return;}
   var sub3=lines3.reduce(function(s,l){return s+l.qty*l.cost;},0);
   var vat3=lines3.reduce(function(s,l){return s+l.qty*l.cost*l.vat/100;},0);
-  var pi2={id:id3,date:dt3,supplierId:supId,supplierName:supNm,lines:lines3,subtotal:sub3,vat:vat3,total:sub3+vat3,type:tPI.isReturn?'return':'purchase',posted:false};
+  var disc3=discPct3>0?(sub3*discPct3/100):discAmt3;
+  var pi2={id:id3,date:dt3,supplierId:supId,supplierName:supNm,supplierInvNo:supInvNo,poId:poId3,lines:lines3,subtotal:sub3,discPct:discPct3,discAmt:discAmt3,discount:disc3,vat:vat3,total:sub3-disc3+vat3,type:tPI.isReturn?'return':'purchase',posted:false};
   if(!db.purchaseInvoices)db.purchaseInvoices=[];
   if(!db.purchaseInvoices.find(function(x){return x.id===id3;}))db.purchaseInvoices.push(pi2);
+  // Update PO status to Received if linked
+  if(poId3){var po3=(db.purchaseOrders||[]).find(function(p){return p.id===poId3;});if(po3)po3.status='Received';}
   modal=null;save();render();
  });
  on('[data-postpi]','click',function(el){
@@ -4625,7 +4937,13 @@ function bindEvents(){
   if(!lines5.length){alert('Add at least one item.');return;}
   var sub5=lines5.reduce(function(s,l){return s+l.qty*l.price;},0);
   var vat5=lines5.reduce(function(s,l){return s+l.qty*l.price*l.vat/100;},0);
-  var si2={id:id5,date:dt5,customerId:cusId,customerName:cusNm,lines:lines5,subtotal:sub5,vat:vat5,total:sub5+vat5,type:tSI.isReturn?'return':'sale',posted:false};
+  var discPct5=Number((document.getElementById('si-discpct')||{}).value)||0;
+  var discAmt5=Number((document.getElementById('si-discamt')||{}).value)||0;
+  var advAmt5=Number((document.getElementById('si-advamt')||{}).value)||0;
+  var advAccId5=(document.getElementById('si-advacc')||{}).value||'';
+  var disc5=discPct5>0?(sub5*discPct5/100):discAmt5;
+  var netTotal5=sub5-disc5+vat5-advAmt5;
+  var si2={id:id5,date:dt5,customerId:cusId,customerName:cusNm,lines:lines5,subtotal:sub5,discPct:discPct5,discAmt:discAmt5,discount:disc5,advAmt:advAmt5,advAccId:advAccId5,vat:vat5,total:netTotal5,type:tSI.isReturn?'return':'sale',posted:false};
   if(!db.salesInvoices2)db.salesInvoices2=[];
   if(!db.salesInvoices2.find(function(x){return x.id===id5;}))db.salesInvoices2.push(si2);
   modal=null;save();render();
@@ -4651,6 +4969,18 @@ function bindEvents(){
  });
  on('[data-printsi]','click',function(el){printSalesInvoice(el.dataset.printsi);});
  on('[data-printpi]','click',function(el){printPurchaseInvoice(el.dataset.printpi);});
+ on('[data-viewsi]','click',function(el){printSalesInvoice(el.dataset.viewsi);});
+ on('[data-viewpi]','click',function(el){printPurchaseInvoice(el.dataset.viewpi);});
+ // Discount fields - PI
+ ['pi-discpct','pi-discamt'].forEach(function(id){
+  var el=document.getElementById(id);
+  if(el)el.addEventListener('input',function(){updatePITotals();});
+ });
+ // Discount fields - SI
+ ['si-discpct','si-discamt','si-advamt'].forEach(function(id){
+  var el=document.getElementById(id);
+  if(el)el.addEventListener('input',function(){updateSITotals();});
+ });
  on('[data-delpi]','click',function(el){if(confirm('Delete?')){db.purchaseInvoices=(db.purchaseInvoices||[]).filter(function(x){return x.id!==el.dataset.delpi;});save();render();}});
  on('[data-delsi]','click',function(el){if(confirm('Delete?')){db.salesInvoices2=(db.salesInvoices2||[]).filter(function(x){return x.id!==el.dataset.delsi;});save();render();}});
 
@@ -4710,6 +5040,21 @@ function bindEvents(){
   }
   tUser={name:'',username:'',active:true,perms:{},editId:null};
   modal='user';render();
+ });
+
+ on('[data-fullaccess]','click',function(el){
+  var uid=el.dataset.fullaccess;
+  var u=(db.users||[]).find(function(x){return x.id===uid;});
+  if(!u)return;
+  var fullPerms={};
+  PERM_MODULES.forEach(function(m){
+   fullPerms[m.k]={};
+   m.actions.split('').forEach(function(a){fullPerms[m.k][a]=1;});
+  });
+  u.perms=fullPerms;
+  save();
+  alert((lang==='ar'?'\u062A\u0645 \u0645\u0646\u062D \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0643\u0627\u0645\u0644\u0629 \u0644\u0640 ':'Full access granted to ')+u.name);
+  render();
  });
  on('[data-edituser]','click',function(el){
   var u=db.users.find(function(x){return x.id===el.dataset.edituser;});
@@ -5028,7 +5373,29 @@ function bindEvents(){
 
  // Action buttons (PDF/Excel exports)
 
- on('[data-action]','click',function(el){window.xAction(el.dataset.action);});
+ on('[data-action]','click',function(el){
+  var act=el.dataset.action;
+  var id=el.dataset.id||'';
+  if(act==='editPO'){var po2=(db.purchaseOrders||[]).find(function(p){return p.id===id;});if(po2){tPO=Object.assign({},po2,{editId:po2.id,items:po2.items?po2.items.map(function(i){return Object.assign({},i);}):[]});modal='po';render();}return;}
+  if(act==='delPO'){if(id&&confirm('Delete PO '+id+'?')){db.purchaseOrders=(db.purchaseOrders||[]).filter(function(p){return p.id!==id;});saveDb();render();}return;}
+  if(act==='printPO'){var po3=(db.purchaseOrders||[]).find(function(p){return p.id===id;});if(po3){var w2=window.open('','_blank');if(w2){var ph='<html><head><meta charset="UTF-8"><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px}@media print{button{display:none}}</style></head><body>'+'<h2>Purchase Order: '+po3.id+'</h2>'+'<p>Date: '+po3.date+' | Supplier: '+(po3.supplierName||'—')+' | Status: '+po3.status+'</p>'+'<table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>VAT%</th><th>Total</th></tr></thead><tbody>'+(po3.items||[]).map(function(it){return '<tr><td>'+it.desc+'</td><td>'+it.qty+'</td><td>'+N(it.price)+'</td><td>'+it.vat+'%</td><td>'+N(it.qty*it.price)+'</td></tr>';}).join('')+'</tbody></table>'+'<button onclick="window.print()">Print</button></body></html>';w2.document.write(ph);w2.document.close();}}return;}
+  window.xAction(act);
+ });
+ on1('poAddRow','click',function(){
+  var tbody=document.getElementById('poItemsBody');if(!tbody)return;
+  var i=tbody.rows.length;
+  var tr=document.createElement('tr');
+  tr.innerHTML='<td><input class="poDesc" data-i="'+i+'" style="width:100%;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input class="poQty" data-i="'+i+'" type="number" value="1" min="1" style="width:70px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input class="poPrice" data-i="'+i+'" type="number" value="0" min="0" step="0.01" style="width:100px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td><input class="poVat" data-i="'+i+'" type="number" value="15" min="0" style="width:60px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
+   +'<td class="tr mn poLineTotal" data-i="'+i+'"></td>'
+   +'<td><button class="btn bsm bdr poDelRow" data-i="'+i+'">×</button></td>';
+  tbody.appendChild(tr);
+ });
+ on('.poDelRow','click',function(el){var tr=el.closest('tr');if(tr)tr.remove();});
+ // Tax report Excel
+ if(window.xAction){}
  on('[data-nav]','click',function(el){
   var newView=el.dataset.nav;
   var reportPages=['trial','income','balance'];
