@@ -17,6 +17,11 @@ body{font-family:Arial,sans-serif;background:var(--bg);color:var(--tx);font-size
 .sv{font-size:11px;padding:5px 16px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.9);border-bottom:1px solid rgba(255,255,255,0.1)}
 nav{flex:1;overflow-y:auto;padding:6px 0}
 .ns{font-size:10px;font-weight:700;color:rgba(255,255,255,0.45);padding:9px 16px 3px;text-transform:uppercase;letter-spacing:.07em}
+.nacc{display:flex;align-items:center;justify-content:space-between;padding:9px 12px 9px 14px;cursor:pointer;font-size:10px;font-weight:700;color:rgba(255,255,255,0.55);text-transform:uppercase;letter-spacing:.06em;border-top:1px solid rgba(255,255,255,0.06);user-select:none;transition:background .15s}
+.nacc:hover{background:rgba(255,255,255,0.07)}
+.nacc-lbl{flex:1}
+.nacc-arr{font-size:16px;transition:transform .22s;line-height:1;color:rgba(255,255,255,0.4)}
+.nacc-body{overflow:hidden;transition:max-height .25s ease;max-height:0}
 .ni{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.8);border-left:3px solid transparent;transition:background .12s;white-space:nowrap;overflow:hidden}
 .ni:hover{background:rgba(255,255,255,0.12);color:white}.ni.active{background:rgba(255,255,255,0.18);color:white;font-weight:600;border-left-color:white}
 .ni svg{width:15px;height:15px;flex-shrink:0;opacity:.85}
@@ -41,7 +46,7 @@ td:last-child{width:72px}tr:last-child td{border-bottom:none}tr:hover td{backgro
 .mn{font-family:'Courier New',monospace;font-size:12px}
 .card{background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:18px;margin-bottom:14px}
 .ct{font-size:11px;font-weight:700;color:var(--t2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
-.fr2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fg{display:grid;gap:12px}
+.fr2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fg{display:grid;gap:12px;padding:18px 22px;overflow-y:auto;flex:1;min-height:0}
 .fl{display:flex;flex-direction:column;gap:4px}.fl label{font-size:11px;font-weight:600;color:var(--t2)}
 input,select{width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx);font-family:Arial,sans-serif}
 input:focus,select:focus{outline:2px solid var(--tx);outline-offset:-1px}
@@ -54,10 +59,10 @@ input:focus,select:focus{outline:2px solid var(--tx);outline-offset:-1px}
 .mlab{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
 .mv{font-size:18px;font-weight:700}.mv.pos{color:var(--gn)}.mv.neg{color:var(--rd)}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
-.modal{background:var(--sf);border-radius:var(--rl);border:1px solid var(--bd);padding:22px;width:900px;max-width:98vw;max-height:90vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.15)}
-.mh{font-size:14px;font-weight:700;margin-bottom:18px}
+.modal{background:var(--sf);border-radius:var(--rl);border:1px solid var(--bd);padding:0;width:900px;max-width:98vw;max-height:92vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.15);display:flex;flex-direction:column}
+.mh{font-size:14px;font-weight:700;padding:18px 22px 14px;border-bottom:1px solid var(--bd);flex-shrink:0}
 .modal{direction:inherit}
-.mft{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--bd)}
+.mft{display:flex;gap:8px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--bd);flex-shrink:0;background:var(--sf);border-radius:0 0 var(--rl) var(--rl)}
 .rr{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid var(--bd)}.rr:last-child{border-bottom:none}
 .rt{display:flex;justify-content:space-between;padding:8px 0;font-weight:700;font-size:13px;border-top:2px solid var(--bd2);margin-top:3px}
 .rh{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 7px;padding-bottom:3px;border-bottom:1px solid var(--bd)}.rh:first-child{margin-top:0}
@@ -119,7 +124,7 @@ var IC = {
  up_:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>',
  sub:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 11 21 7 17 3"/><line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/></svg>',
- link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
+ link: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
 };
 function ic(k) { return IC[k] || ''; }
 
@@ -421,7 +426,12 @@ function on(sel,evt,fn){
   },true);
  }
 }
-function on1(id,evt,fn){var el=document.getElementById(id);if(el)el.addEventListener(evt,fn);}
+function on1(id,evt,fn){
+ var el=document.getElementById(id);
+ if(el)el.addEventListener(evt,fn);
+ // Also store for modal re-render recovery
+ if(evt==='click')window['__handler_'+id]=fn;
+}
 
 // EXCEL
 function exportXLS(aoa,sname,fname){
@@ -435,16 +445,12 @@ function exportXLS(aoa,sname,fname){
 
 // PRINT
 function printHTML(title,body){
- var css='@page{margin:15mm}body{font-family:Arial,sans-serif;font-size:10pt;direction:rtl}h3{margin-bottom:4pt;font-size:13pt}p.sub{font-size:9pt;color:#666;margin-bottom:10pt}table{width:100%;border-collapse:collapse}th{background:#222;color:#fff;padding:5pt 8pt;text-align:right;font-size:9pt}td{padding:5pt 8pt;border-bottom:1pt solid #ddd}.tr{text-align:left}.tot{font-weight:700;background:#eee}.fin{font-weight:700;background:#222;color:#fff}.no-print{display:none}@media print{.no-print{display:none}}';
- var html='<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>'+title+'</title><style>'+css+'</style></head><body>'
-  +'<div class="no-print" style="padding:10px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:10px;margin-bottom:15px">'
-  +'<button onclick="window.print()" style="padding:8px 20px;background:#222;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px">&#128438; Print / Save as PDF</button>'
-  +'<button onclick="window.close()" style="padding:8px 16px;background:#eee;border:1px solid #ccc;border-radius:5px;cursor:pointer;font-size:13px">Close</button>'
-  +'<span style="font-size:11px;color:#666">Select your printer from the dialog, or choose &quot;Save as PDF&quot; to save a copy</span>'
-  +'</div>'
-  +(db.company.logo?'<div style="text-align:right;margin-bottom:8pt"><img src="'+db.company.logo+'" style="height:60px;max-width:160px;object-fit:contain"></div>':'')+'<h3>'+db.company.name+'</h3><p class="sub">'+db.company.address+' | VAT: '+db.company.vatNo+' | CR: '+db.company.cr+' | '+title+' | '+today()+'</p>'+body
-  +'</body></html>';
- var w=window.open('','_blank','width=900,height=700');
+ var co=db.company;
+ var css='@page{margin:12mm 15mm}body{font-family:Arial,sans-serif;font-size:10pt;direction:rtl;color:#1a1a1a}table{width:100%;border-collapse:collapse}th{background:#0D3B6E;color:#fff;padding:6pt 8pt;text-align:right;font-size:9pt}td{padding:5pt 8pt;border-bottom:1pt solid #e5e5e5}.tr{text-align:left}.tot{font-weight:700;background:#f0f4f8}.fin{font-weight:700;background:#0D3B6E;color:#fff}.no-print{display:none}@media print{.no-print{display:none}}.rh{display:flex;justify-content:space-between;align-items:center;padding-bottom:10pt;border-bottom:3pt solid #0D3B6E;margin-bottom:14pt}';
+ var logoHtml=co.logo?'<img src="'+co.logo+'" style="height:65px;max-width:180px;object-fit:contain;display:block">':'<div style="font-size:14pt;font-weight:900;color:#0D3B6E">'+(co.name||'')+'</div>';
+ var header='<div class="rh"><div>'+logoHtml+'</div><div style="text-align:right"><div style="font-size:13pt;font-weight:700;color:#0D3B6E">'+title+'</div><div style="font-size:10pt;font-weight:700;color:#333;margin-top:4pt">'+(co.name||'')+'</div>'+(co.address?'<div style="font-size:8pt;color:#888">'+co.address+'</div>':'')+(co.vatNo?'<div style="font-size:8pt;color:#888">VAT: '+co.vatNo+(co.cr?' | CR: '+co.cr:'')+'</div>':'')+'<div style="font-size:8pt;color:#888">'+today()+'</div></div></div>';
+ var html='<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>'+title+'</title><style>'+css+'</style></head><body><div class="no-print" style="padding:10px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;gap:10px;margin-bottom:15px"><button onclick="window.print()" style="padding:8px 20px;background:#0D3B6E;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px">&#128438; Print / Save as PDF</button><button onclick="window.close()" style="padding:8px 16px;background:#eee;border:1px solid #ccc;border-radius:5px;cursor:pointer">Close</button></div>'+header+body+'<div style="margin-top:20pt;padding-top:8pt;border-top:1pt solid #e0e0e0;font-size:8pt;color:#aaa;text-align:center">'+(co.name||'')+' | '+title+' | '+today()+' | Mizan IQ</div></body></html>';
+ var w=window.open('','_blank','width=960,height=750');
  if(w){w.document.write(html);w.document.close();}
  else{var blob=new Blob([html],{type:'text/html'});var u=URL.createObjectURL(blob);window.open(u,'_blank');setTimeout(function(){URL.revokeObjectURL(u);},8000);}
 }
@@ -788,6 +794,8 @@ function render(){
  catch(e){el.innerHTML='<div style="color:red;padding:20px;background:#fff1f0;margin:20px;border-radius:8px"><b>Error: </b>'+e.message+'<br><small>'+(e.stack||'').replace(/</g,'&lt;').slice(0,400)+'</small></div>';}
 }
 // Expose functions globally for inline onclick handlers
+// Accordion state — which sections are open
+var openSections={};
 window.render=render;
 window.clearSession=clearSession;
 window.doLogout=function(){currentUser=null;clearSession();render();};
@@ -902,11 +910,32 @@ function buildLayout(){
   {sec:isAr?'🎓 التدريب المحاسبي':'🎓 Training'},
   {k:'training',    i:'book',  l:isAr?'وحدة التدريب':'Training Module'},
  ];
- var nav='';
- navData.filter(function(n){if(!n.k)return true;return isAdmin()||canView(n.k);}).forEach(function(n){
-  if(n.sec)nav+='<div class="ns">'+n.sec+'</div>';
-  else nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+n.k+'">'+ic(n.i)+' '+n.l+'</div>';
- });
+  var nav='';
+  var currentSec=null;
+  // Find active section
+  var activeSec=null,tempSec2=null;
+  navData.forEach(function(n){if(n.sec){tempSec2=n.sec;}else if(n.k===view){activeSec=tempSec2;}});
+  // Dashboard first (no section)
+  navData.filter(function(n){if(!n.k)return true;return isAdmin()||canView(n.k);}).forEach(function(n,ni){
+   if(n.sec){
+    // Close previous section body
+    if(currentSec!==null)nav+='</div>';
+    currentSec=n.sec;
+    var secKey=n.sec;
+    var isOpen=openSections[secKey]===true||(openSections[secKey]===undefined&&activeSec===secKey);
+    nav+='<div class="nacc" data-sec="'+encodeURIComponent(secKey)+'" data-open="'+(isOpen?'1':'0')+'">'
+     +'<span class="nacc-lbl">'+secKey+'</span>'
+     +'<span class="nacc-arr" style="transform:'+(isOpen?'rotate(90deg)':'rotate(0)')+'">›</span>'
+     +'</div>'
+     +'<div class="nacc-body" style="max-height:'+(isOpen?'800px':'0')+'px">';
+   } else if(!n.k){
+    // Dashboard — outside sections
+    nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+(n.k||'')+'" style="margin:4px 6px 0">'+ic(n.i)+' '+n.l+'</div>';
+   } else {
+    nav+='<div class="ni'+(view===n.k?' active':'')+'" data-nav="'+n.k+'">'+ic(n.i)+' '+n.l+'</div>';
+   }
+  });
+  if(currentSec!==null)nav+='</div>';
  var pages={dashboard:pDashboard,training:pTraining,ai_settings:pAISettings,ai_bank:pAIBank,ai_analysis:pAIAnalysis,ai_cashflow:pAICashFlow,ai_forecast:pAIForecast,coa:pCOA,items:pItems,po:pPurchaseOrders,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,fiscalyear:pFiscalYear,journal:pJournal,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,equity:pEquity,workcap:pWorkCap,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,taxSales:pTaxSales,taxPurchases:pTaxPurchases,zakat:pZakat,budget:pBudget,budgetcmp:pBudgetCompare,mgmtdash:pMgmtDash,boarddash:pBoardDash,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport};
  if(view==='fixedassets'&&tFA){return pAssetDetail();}
  var fn=pages[view]||pDashboard;
@@ -1061,14 +1090,19 @@ function calcAnnualDep(asset){
 }
 // Accumulated depreciation up to a date
 function calcAccDep(asset,toDate){
+ // Use actual posted depreciation if available (from journal entries)
+ var posted=asset.accDepreciation||0;
+ // Also calculate theoretical based on time
  var annual=calcAnnualDep(asset);
  var startDate=new Date(asset.purchaseDate);
  var endDate=toDate?new Date(toDate):new Date(today());
- var months=( endDate.getFullYear()-startDate.getFullYear())*12+(endDate.getMonth()-startDate.getMonth());
+ var months=(endDate.getFullYear()-startDate.getFullYear())*12+(endDate.getMonth()-startDate.getMonth());
  if(months<0)months=0;
  var years=months/12;
  var maxDep=(asset.cost||0)-(asset.salvageValue||0);
- return Math.min(Math.round(annual*years*100)/100,maxDep);
+ var theoretical=Math.min(Math.round(annual*years*100)/100,maxDep);
+ // Return the higher of posted or theoretical (posted takes precedence when > 0)
+ return posted>0?posted:theoretical;
 }
 function bookValue(asset,toDate){
  return Math.max(0,(asset.cost||0)-calcAccDep(asset,toDate));
@@ -1108,7 +1142,7 @@ function pFixedAssets(){
     +'<td style="font-size:12px;color:var(--t2)">'+( a.category||'—')+'</td>'
     +'<td style="font-size:12px">'+( a.locationId?locName(a.locationId):'—')+'</td>'
     +'<td class="tr mn">'+N(a.cost||0)+'</td>'
-    +'<td class="tr mn" style="color:var(--rd)">'+N(accDep)+'</td>'
+    +'<td class="tr mn" style="color:var(--rd)">'+N(accDep)+(accDep===0&&(asset.accDepreciation||0)===0?'<div style="font-size:9px;color:var(--t3)">'+(lang==='ar'?'لم يُرحَّل بعد':'Not posted yet')+'</div>':'')+'</td>'
     +'<td class="tr mn" style="font-weight:700;color:'+(isFullyDep?'var(--t3)':'var(--gn)')+'">'+N(bv)+'</td>'
     +'<td style="font-size:12px">'+( a.purchaseDate||'—')+'</td>'
     +'<td><span class="b '+(a.active!==false?'bgn':'bgr')+'">'+(a.active!==false?'Active':'Disposed')+'</span></td>'
@@ -1515,50 +1549,119 @@ function pPurchaseOrders(){
 
 function mPurchaseOrder(){
  var isAr=lang==='ar';
- var po=tPO;
+ var po=tPO||{};
  var suppliers=db.suppliers||[];
- var items=po.items||[{desc:'',qty:1,price:0,vat:15}];
+ var items=po.items&&po.items.length?po.items:[{desc:'',qty:1,price:0,vat:15}];
  var statusOpts=['Draft','Sent','Received','Cancelled'];
-
- var supOpts=suppliers.map(function(s){
-  return '<option value="'+s.id+'"'+(s.id===po.supplierId?' selected':'')+'>'+s.name+'</option>';
- }).join('');
-
- var itemRows=items.map(function(it,i){
-  return '<tr>'
-   +'<td><input class="poDesc" data-i="'+i+'" value="'+(it.desc||'')+'" style="width:100%;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px" placeholder="'+(isAr?'وصف البند':'Item description')+'"></td>'
-   +'<td><input class="poQty" data-i="'+i+'" type="number" value="'+(it.qty||1)+'" min="1" style="width:70px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
-   +'<td><input class="poPrice" data-i="'+i+'" type="number" value="'+(it.price||0)+'" min="0" step="0.01" style="width:100px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
-   +'<td><input class="poVat" data-i="'+i+'" type="number" value="'+(it.vat||15)+'" min="0" style="width:60px;padding:4px 6px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px"></td>'
-   +'<td class="tr mn poLineTotal" data-i="'+i+'">'+(it.qty&&it.price?N(it.qty*it.price):'')+'</td>'
-   +'<td><button class="btn bsm bdr poDelRow" data-i="'+i+'">×</button></td>'
+ var supOpts=suppliers.map(function(s){return '<option value="'+s.id+'"'+(s.id===po.supplierId?' selected':'')+'>'+s.name+'</option>';}).join('');
+ var dbItems=db.items||[];
+ // datalist for native browser autocomplete
+ var dlHtml='<datalist id="poDL">'+dbItems.map(function(it){return '<option value="'+it.name+'" data-id="'+it.id+'" data-price="'+(it.avgCost||0)+'" data-vat="'+(it.vat||15)+'">';}).join('')+'</datalist>';
+ var ins='width:100%;padding:5px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;background:var(--sf);color:var(--tx)';
+ var ins2=function(w){return w+';padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;background:var(--sf);color:var(--tx)';};
+ var itemRows=dlHtml+items.map(function(it,i){
+  var lt=(it.qty||0)*(it.price||0);
+  var va=lt*((it.vat||15)/100);
+  return '<tr id="por-'+i+'">'
+   +'<td style="min-width:180px"><input class="poDesc" list="poDL" data-i="'+i+'" value="'+(it.desc||'')+'" placeholder="'+(isAr?'ابحث أو اكتب':'Search or type')+'" autocomplete="off" oninput="calcPOTotals();" style="'+ins+'"></td>'
+   +'<td><input class="poQty" data-i="'+i+'" type="number" value="'+(it.qty||1)+'" min="0.01" step="0.01" oninput="calcPOTotals();" style="'+ins2('width:80px')+'"></td>'
+   +'<td><input class="poPrice" data-i="'+i+'" type="number" value="'+(it.price||0)+'" min="0" step="0.01" oninput="calcPOTotals();" style="'+ins2('width:100px')+'"></td>'
+   +'<td><input class="poVat" data-i="'+i+'" type="number" value="'+(it.vat!==undefined?it.vat:15)+'" min="0" max="100" oninput="calcPOTotals();" style="'+ins2('width:60px')+'"></td>'
+   +'<td class="tr mn poLineTotal" style="padding:5px 8px;font-size:12px">'+(lt?N(lt+va):'')+'</td>'
+   +'<td><button type="button" class="poDelRow" style="background:#b91c1c;color:white;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:13px">×</button></td>'
    +'</tr>';
  }).join('');
 
  var body=''
   +'<div class="fr2">'
-  +fld(isAr?'رقم الأمر *':'PO # *','<input id="po-id" value="'+(po.id||nextPO())+'">')
-  +fld(isAr?'التاريخ *':'Date *','<input type="date" id="po-date" value="'+(po.date||today())+'">')
+  +fld(isAr?'رقم الأمر':'PO #','<input id="po-id" value="'+(po.id||nextPO())+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">')
+  +fld(isAr?'التاريخ':'Date','<input type="date" id="po-date" value="'+(po.date||today())+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">')
   +'</div>'
   +'<div class="fr2">'
-  +fld(isAr?'المورد *':'Supplier *','<select id="po-sup"><option value="">— '+(isAr?'اختر':'Select')+' —</option>'+supOpts+'</select>')
-  +fld(isAr?'تاريخ التسليم المتوقع':'Expected Delivery','<input type="date" id="po-delivery" value="'+(po.deliveryDate||'')+'">')
+  +fld(isAr?'المورد':'Supplier','<select id="po-sup" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)"><option value="">—</option>'+supOpts+'</select>')
+  +fld(isAr?'تاريخ التسليم':'Delivery','<input type="date" id="po-delivery" value="'+(po.deliveryDate||'')+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">')
   +'</div>'
   +'<div class="fr2">'
-  +fld(isAr?'الحالة':'Status','<select id="po-status">'+statusOpts.map(function(s){var ar={Draft:'مسودة',Sent:'مُرسَل',Received:'مُستَلَم',Cancelled:'ملغي'}[s];return '<option value="'+s+'"'+(s===(po.status||'Draft')?' selected':'')+'>'+s+(isAr?' — '+ar:'')+'</option>';}).join('')+'</select>')
-  +fld(isAr?'ملاحظات':'Notes','<input id="po-notes" value="'+(po.notes||'')+'">')
+  +fld(isAr?'الحالة':'Status','<select id="po-status" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'+statusOpts.map(function(s){return '<option value="'+s+'"'+(s===(po.status||'Draft')?' selected':'')+'>'+s+'</option>';}).join('')+'</select>')
+  +fld(isAr?'ملاحظات':'Notes','<input id="po-notes" value="'+(po.notes||'')+'" style="width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">')
   +'</div>'
-  +'<div style="margin:10px 0 6px;font-weight:600;font-size:13px">'+(isAr?'بنود الأمر':'Order Items')+'</div>'
-  +'<div class="tw" style="overflow-x:auto"><table id="poItemsTable" style="width:100%"><thead><tr>'
-  +'<th>'+(isAr?'الوصف':'Description')+'</th><th>'+(isAr?'الكمية':'Qty')+'</th>'
-  +'<th>'+(isAr?'سعر الوحدة':'Unit Price')+'</th><th>'+(isAr?'الضريبة %':'VAT%')+'</th>'
-  +'<th class="tr">'+(isAr?'الإجمالي':'Total')+'</th><th></th>'
+  +'<div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--bg)">'
+  +'<th style="padding:6px 8px;border:1px solid var(--bd2);text-align:right">'+(isAr?'الوصف':'Description')+'</th>'
+  +'<th style="padding:6px 8px;border:1px solid var(--bd2);text-align:center">'+(isAr?'الكمية':'Qty')+'</th>'
+  +'<th style="padding:6px 8px;border:1px solid var(--bd2);text-align:center">'+(isAr?'سعر الوحدة':'Unit Price')+'</th>'
+  +'<th style="padding:6px 8px;border:1px solid var(--bd2);text-align:center">'+(isAr?'الضريبة%':'VAT%')+'</th>'
+  +'<th style="padding:6px 8px;border:1px solid var(--bd2);text-align:center">'+(isAr?'الإجمالي شامل الضريبة':'Total incl. VAT')+'</th>'
+  +'<th style="padding:6px 8px;border:1px solid var(--bd2);width:40px"></th>'
   +'</tr></thead><tbody id="poItemsBody">'+itemRows+'</tbody></table></div>'
-  +'<button class="btn bsm" id="poAddRow" style="margin-top:6px">+ '+(isAr?'إضافة بند':'Add Item')+'</button>'
-  +'<div id="poTotals" style="margin-top:12px;text-align:left;background:var(--bg);border-radius:var(--r);padding:10px 14px"></div>';
+  +'<button type="button" id="poAddRow" style="margin-top:8px;padding:5px 14px;border:1px solid var(--bd2);border-radius:var(--r);cursor:pointer;font-size:12px;background:var(--sf);color:var(--tx)">+ '+(isAr?'إضافة بند':'Add Line')+'</button>'
+  +'<div style="margin-top:12px;background:var(--bg);border-radius:var(--r);padding:12px 16px">'
+  +'<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--t2)">'+(isAr?'المجموع قبل الضريبة:':'Subtotal:')+'</span><span id="poSubtotal" class="mn" style="font-weight:600">0.00</span></div>'
+  +'<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--t2)">'+(isAr?'الضريبة:':'VAT:')+'</span><span id="poVatTotal" class="mn" style="color:#B45309;font-weight:600">0.00</span></div>'
+  +'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--bd);padding-top:8px"><span style="font-weight:700">'+(isAr?'الإجمالي:':'Total:')+'</span><span id="poGrandTotal" class="mn" style="font-size:18px;font-weight:800;color:#185FA5">0.00</span></div>'
+  +'</div>'
+  +'<script>window.calcPOTotals=function(){'
+  +'var sub=0,vat=0;'
+  +'document.querySelectorAll("#poItemsBody tr").forEach(function(tr){'
+  +' var q=Number((tr.querySelector(".poQty")||{}).value)||0;'
+  +' var p=Number((tr.querySelector(".poPrice")||{}).value)||0;'
+  +' var v=Number((tr.querySelector(".poVat")||{}).value)||0;'
+  +' var line=q*p; sub+=line; vat+=line*v/100;'
+  +' var td=tr.querySelector(".poLineTotal");if(td)td.textContent=line?(Math.round((line+line*v/100)*100)/100).toFixed(2):"";'
+  +'});'
+  +'var sEl=document.getElementById("poSubtotal");if(sEl)sEl.textContent=sub.toFixed(2);'
+  +'var vEl=document.getElementById("poVatTotal");if(vEl)vEl.textContent=vat.toFixed(2);'
+  +'var tEl=document.getElementById("poGrandTotal");if(tEl)tEl.textContent=(sub+vat).toFixed(2);'
+  +'};'
+  +'setTimeout(function(){window.calcPOTotals();'
+  +' document.getElementById("poAddRow")&&document.getElementById("poAddRow").addEventListener("click",function(){'
+  +'  var tb=document.getElementById("poItemsBody");if(!tb)return;'
+  +'  var i=tb.rows.length;var tr=document.createElement("tr");tr.id="por-"+i;'
+  +'  tr.innerHTML=\'<td><input class="poDesc" data-i="\'+i+\'" style="width:100%;padding:5px 8px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;background:var(--sf);color:var(--tx)"></td><td><input class="poQty" data-i="\'+i+\'" type="number" value="1" style="width:80px;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;background:var(--sf);color:var(--tx)"></td><td><input class="poPrice" data-i="\'+i+\'" type="number" value="0" step="0.01" style="width:100px;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;background:var(--sf);color:var(--tx)"></td><td><input class="poVat" data-i="\'+i+\'" type="number" value="15" style="width:60px;padding:5px;border:1px solid var(--bd2);border-radius:var(--r);font-size:12px;background:var(--sf);color:var(--tx)"></td><td class="tr mn poLineTotal" style="padding:5px 8px"></td><td><button type="button" onclick="document.getElementById(\\\'por-\'+i+\\\'\').remove();calcPOTotals();" style="background:#b91c1c;color:white;border:none;border-radius:4px;padding:3px 8px;cursor:pointer">×</button></td>\';'
+  +'  tb.appendChild(tr);'
+  +'  tr.querySelectorAll("input").forEach(function(inp){inp.addEventListener("input",window.calcPOTotals);});'
+  +' });'
+  +' document.querySelectorAll(".poQty,.poPrice,.poVat").forEach(function(inp){inp.addEventListener("input",window.calcPOTotals);});'
+  +'},100);<\/script>';
 
- return wrap((po.editId?'Edit PO: '+po.id:(isAr?'أمر شراء جديد':'New Purchase Order')),body,'mSavePO',isAr?'حفظ أمر الشراء':'Save PO');
+ // Save button with inline onclick
+ return '<div class="ov"><div class="modal" style="max-width:700px"><div class="mh">'+(po.editId?'Edit: '+po.id:(isAr?'أمر شراء جديد':'New Purchase Order'))+'</div>'
+  +'<div class="fg">'+body+'</div>'
+  +'<div class="mft">'
+  +'<button class="btn" data-action="cancelModal" type="button">'+(isAr?'إلغاء':'Cancel')+'</button>'
+  +'<button class="btn bp" type="button" onclick="savePurchaseOrder();" style="background:#185FA5;border-color:#185FA5">💾 '+(isAr?'حفظ أمر الشراء':'Save PO')+'</button>'
+  +'</div></div></div>';
 }
+
+window.savePurchaseOrder=function(){
+ var isAr=lang==='ar';
+ var id2=(document.getElementById('po-id')||{}).value||nextPO();
+ var date2=(document.getElementById('po-date')||{}).value||today();
+ var supId2=(document.getElementById('po-sup')||{}).value||'';
+ var sup2=supId2?(db.suppliers||[]).find(function(s){return s.id===supId2;}):null;
+ var delivery2=(document.getElementById('po-delivery')||{}).value||'';
+ var status2=(document.getElementById('po-status')||{}).value||'Draft';
+ var notes2=(document.getElementById('po-notes')||{}).value||'';
+ var items2=[];
+ document.querySelectorAll('#poItemsBody tr').forEach(function(tr){
+  var desc=(tr.querySelector('.poDesc')||{}).value||'';
+  var qty=Number((tr.querySelector('.poQty')||{}).value)||0;
+  var price=Number((tr.querySelector('.poPrice')||{}).value)||0;
+  var vat2=Number((tr.querySelector('.poVat')||{}).value)||15;
+  if(desc||qty||price)items2.push({desc:desc,qty:qty,price:price,vat:vat2});
+ });
+ if(!items2.length){alert(isAr?'أضف بنداً واحداً على الأقل':'Add at least one item');return;}
+ db.purchaseOrders=db.purchaseOrders||[];
+ var sub=items2.reduce(function(s,i){return s+i.qty*i.price;},0);
+ var vatTotal=items2.reduce(function(s,i){return s+i.qty*i.price*i.vat/100;},0);
+ var rec={id:id2,date:date2,supplierId:supId2,supplierName:sup2?sup2.name:'',deliveryDate:delivery2,status:status2,notes:notes2,items:items2,subtotal:sub,vat:vatTotal,total:sub+vatTotal};
+ if(tPO&&tPO.editId){
+  var idx=db.purchaseOrders.findIndex(function(p){return p.id===tPO.editId;});
+  if(idx>=0)db.purchaseOrders[idx]=rec; else db.purchaseOrders.push(rec);
+ } else {
+  db.purchaseOrders.push(rec);
+ }
+ save();modal=null;view='po';render();
+};
 
 function pPurchases(){
  var isAr=lang==='ar';
@@ -2676,9 +2779,9 @@ function pAIAnalysis(){
   {id:'comparison',ar:'المقارنة الزمنية',en:'Time Comparison',icon:'📈'}
  ].forEach(function(t){
   var sel=aiAnalysisState.type===t.id;
-  h+='<div onclick="aiAnalysisState.type=\''+t.id+'\';document.querySelectorAll(\'.ai-type-btn\').forEach(function(e){e.style.borderColor=\'var(--bd)\';e.style.background=\'var(--sf)\'});this.style.borderColor=\'#185FA5\';this.style.background=\'#E6F1FB\';" class="ai-type-btn" style="border:2px solid '+(sel?'#185FA5':'var(--bd)')+';background:'+(sel?'#E6F1FB':'var(--sf)')+';border-radius:8px;padding:12px;cursor:pointer;text-align:center">'
-   +'<div style="font-size:20px">'+t.icon+'</div>'
-   +'<div style="font-size:12px;font-weight:600;margin-top:4px">'+(isAr?t.ar:t.en)+'</div>'
+  h+='<div data-anatype="'+t.id+'" class="ai-type-btn" style="border:2px solid '+(sel?'#185FA5':'var(--bd)')+';background:'+(sel?'#E6F1FB':'var(--sf)')+';border-radius:8px;padding:12px;cursor:pointer;text-align:center;transition:all .2s">'
+   +'<div style="font-size:24px;margin-bottom:4px">'+t.icon+'</div>'
+   +'<div style="font-size:12px;font-weight:600;color:'+(sel?'#185FA5':'var(--tx)')+'">'+(isAr?t.ar:t.en)+'</div>'
    +'</div>';
  });
 
@@ -2764,8 +2867,8 @@ function pAIForecast(){
   {id:'budget',ar:'الميزانية التقديرية',en:'Budget Forecast',icon:'📋',color:'#6D28D9'}
  ].forEach(function(t){
   var sel=aiForecastState.type===t.id;
-  h+='<div onclick="aiForecastState.type=\''+t.id+'\';document.querySelectorAll(\'.ai-fc-btn\').forEach(function(e){e.style.borderColor=\'var(--bd)\';e.style.background=\'var(--sf)\'});this.style.borderColor=\''+t.color+'\';this.style.background=\''+t.color+'11\';" class="ai-fc-btn" style="border:2px solid '+(sel?t.color:'var(--bd)')+';background:'+(sel?t.color+'11':'var(--sf)')+';border-radius:8px;padding:14px;cursor:pointer">'
-   +'<div style="font-size:24px;margin-bottom:6px">'+t.icon+'</div>'
+  h+='<div data-fctype="'+t.id+'" class="ai-fc-btn" style="border:2px solid '+(sel?t.color:'var(--bd)')+';background:'+(sel?t.color+'18':'var(--sf)')+';border-radius:10px;padding:14px;cursor:pointer;text-align:center">'
+   +'<div style="font-size:28px;margin-bottom:6px">'+t.icon+'</div>'
    +'<div style="font-size:12px;font-weight:700;color:'+t.color+'">'+(isAr?t.ar:t.en)+'</div>'
    +'</div>';
  });
@@ -3077,7 +3180,7 @@ function pJournal(){
     });
     content+='<tr><td style="position:relative;min-width:260px">'
      +'<input class="jeAS" data-i="'+i+'" autocomplete="off" placeholder="'+(isAr?'بحث حساب...':'Search account...')+'" value="'+selAccLabel+'" style="width:100%;padding:6px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
-     +'<div class="jeAD" data-i="'+i+'" style="display:none;position:absolute;z-index:300;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);width:340px;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.15);top:100%;left:0">'
+    +'<div class="jeAD" data-i="'+i+'" style="display:none;position:fixed;z-index:9999;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);width:380px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.25)">'
      +'<select class="jeA" data-i="'+i+'" size="7" style="width:100%;border:none;outline:none;font-size:12px;background:var(--sf);color:var(--tx);padding:2px 0">'+accOpts+'</select>'
      +'</div></td>';
     var accObj=db.accounts.find(function(x){return x.id===l.acc;});
@@ -4520,7 +4623,7 @@ function pZakat(){
 }
 
 // ── BUDGET MODULE ─────────────────────────────────────────────
-var budgetState={tab:'list'}; // list | new | edit | compare
+var aiForecastState={type:'sales',loading:false,result:'',period:12};
 
 function pBudget(){
  var isAr=lang==='ar';
@@ -4870,7 +4973,7 @@ function contactCard(c,isSup){
  var h='<div class="card" style="cursor:pointer" data-view'+type+'="'+c.id+'">';
  h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px"><div><div style="font-weight:700">'+c.name+'</div><div style="font-size:11px;color:var(--t3);margin-top:2px">'+([c.city,c.country].filter(Boolean).join(', ')||'No location')+'</div></div><span class="tag">'+c.id+'</span></div>';
  h+='<div style="font-size:12px;color:var(--t2);margin-bottom:8px">'+(c.phone||'—')+(c.cr?'  CR:'+c.cr:'')+'</div>';
- if(la)h+='<div style="font-size:11px;display:flex;align-items:center;gap:5px;padding-bottom:8px;border-bottom:1px solid var(--bd)">'+ic('link')+'<span class="b '+(isSup?'bam':'bbl')+'" style="font-size:10px">'+la.name+'</span></div>';
+ if(la)h+='<div style="font-size:11px;display:flex;align-items:center;gap:5px;padding-bottom:8px;border-bottom:1px solid var(--bd)"><span class="b '+(isSup?'bam':'bbl')+'" style="font-size:10px">'+la.name+'</span></div>';
  else h+='<div style="font-size:11px;color:var(--t3);border-top:1px solid var(--bd);padding-top:6px">No account linked</div>';
  h+='<div style="display:flex;justify-content:flex-end;gap:3px;margin-top:8px" onclick="event.stopPropagation()"><button class="btn bsm bg0" data-edit'+type+'="'+c.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-del'+type+'="'+c.id+'">'+ic('del')+'</button></div></div>';
  return h;
@@ -4891,7 +4994,7 @@ function contactDetail(c,isSup){
  h+='</div><div class="card"><div class="ct">National Address</div>';
  [['Bldg.',c.buildingNo||'—'],['Street',c.street||'—'],['District',c.district||'—'],['City',c.city||'—'],['Country',c.country||'—']].forEach(function(r){h+='<div class="rr"><span style="color:var(--t2);font-size:12px">'+r[0]+'</span><span>'+r[1]+'</span></div>';});
  h+='<div style="padding-top:6px;border-top:1px solid var(--bd);font-size:11px;color:var(--t2);">'+(addr||'No address')+'</div></div></div>';
- h+='<div class="card" style="margin-bottom:14px"><div class="ct">'+ic('link')+' Linked Account</div>';
+ h+='<div class="card" style="margin-bottom:14px"><div class="ct">🔗 Linked Account</div>';
  if(la)h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tag">'+la.id+'</span><strong>'+(par?par.name+' / ':'')+la.name+'</strong>'+tbadge(la.type)+'<span class="mn" style="font-size:12px;color:var(--t2)">Bal: '+fmt(la.bal)+'</span><button class="btn bsm bg0" data-gotostmt="'+la.id+'">'+ic('doc')+' Statement</button></div>';
  else h+='<span style="color:var(--t3);font-size:13px">No account linked.</span>';
  h+='</div>';
@@ -5042,7 +5145,7 @@ function pFiscalYear(){
    +'</div>'
    +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
    +'<button class="btn bp" id="btnCloseFY" style="background:#b91c1c;border-color:#b91c1c">🔒 '+(isAr?'إغلاق السنة المالية':'Close Fiscal Year')+'</button>'
-   +'<button class="btn" id="btnCancelFY" style="background:#B45309;border-color:#B45309;color:white">↩️ '+(isAr?'إلغاء / حذف السنة المالية':'Cancel / Delete Fiscal Year')+'</button>'
+   +'<button class="btn" id="btnCancelFY" style="background:#B45309;border-color:#B45309;color:white">↩️ '+(isAr?'التراجع عن إغلاق السنة المالية':'Undo / Reopen Fiscal Year')+'</button>'
    +'</div>';
  } else {
   // Show last closed year with Undo button
@@ -5100,7 +5203,7 @@ function buildModal(){
  var fn=fns[modal];return fn?fn():'';
 }
 function wrap(title,body,saveId,saveLabel){
- return '<div class="ov"><div class="modal"><div class="mh">'+title+'</div><div class="fg">'+body+'</div><div class="mft">'+btn_('','mCancel','Cancel')+btn_('bp',saveId,ic('save')+' '+saveLabel)+'</div></div></div>';
+ return '<div class="ov"><div class="modal"><div class="mh">'+title+'</div><div class="fg">'+body+'</div><div class="mft">'+btn_('','mCancel','Cancel')+'<button class="btn bp" id="'+saveId+'" data-action="'+saveId+'">'+ic('save')+' '+saveLabel+'</button></div></div></div>';
 }
 function mAcc(){
  var a=tAcc,isSub=!!a.parentId||!a.isMain;
@@ -5204,21 +5307,57 @@ function mCC(){
 }
 function mContact(){
  var isSup=modal==='sup',c=isSup?tSup:tCus;
- var ctrs=['Saudi Arabia','UAE','Kuwait','Bahrain','Qatar','Oman','Jordan','Egypt','Other'];
+ var isAr=lang==='ar';
+ var ctrs=['Saudi Arabia','UAE','Kuwait','Bahrain','Qatar','Oman','Jordan','Egypt','USA','UK','Other'];
  var leaves=leafAccs();
- var body='<div class="fr2">'+fld('Name *','<input id="c-name" value="'+(c.name||'')+'">')+fld('Phone','<input id="c-phone" value="'+(c.phone||'')+'">');
- body+='<div class="fr2">'+fld('Email','<input id="c-email" value="'+(c.email||'')+'">')+fld('CR No.','<input id="c-cr" value="'+(c.cr||'')+'">');
- body+=fld('VAT Number','<input id="c-vat" value="'+(c.vatNo||'')+'" placeholder="300XXXXXXXXX000003">');
- body+='<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;padding-bottom:3px;border-bottom:1px solid var(--bd)">National Address</div>';
- body+='<div class="fr2">'+fld('Building No.','<input id="c-bldg" value="'+(c.buildingNo||'')+'">');
- body+=fld('Street','<input id="c-street" value="'+(c.street||'')+'">');
- body+='<div class="fr2">'+fld('District','<input id="c-dist" value="'+(c.district||'')+'">');
- body+=fld('City','<input id="c-city" value="'+(c.city||'')+'">');
- body+=fld('Country','<select id="c-country">'+ctrs.map(function(ct){return '<option'+(c.country===ct?' selected':'')+'>'+ct+'</option>';}).join('')+'</select>');
- body+=fld('Notes','<input id="c-notes" value="'+(c.notes||'')+'">');
- body+='<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;padding-bottom:3px;border-bottom:1px solid var(--bd)">'+ic('link')+' Linked Account</div>';
- body+=fld('Account '+(isSup?'(e.g. Accounts Payable)':'(e.g. Accounts Receivable)'),'<select id="c-acc"><option value="">No linked account</option>'+leaves.map(function(a){var p=a.pid?db.accounts.find(function(x){return x.id===a.pid;}):null;return '<option value="'+a.id+'"'+(c.linkedAccId===a.id?' selected':'')+'>'+(p?p.name+' / ':'')+a.id+' - '+a.name+'</option>';}).join('')+'</select>');
- return wrap((c.editId?'Edit ':'New ')+(isSup?'Supplier':'Customer'),body,'mSaveContact','Save');
+ var inp='width:100%;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)';
+ var body='';
+ body+='<div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;padding:4px 0 6px;border-bottom:1px solid var(--bd);margin-bottom:10px">\u{1f464} '+(isAr?'\u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0623\u0633\u0627\u0633\u064a\u0629':'Basic Information')+'</div>';
+ body+='<div class="fr2">'+fld((isAr?'\u0627\u0644\u0627\u0633\u0645 \u0628\u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a\u0629 *':'Name (English) *'),'<input id="c-name" value="'+(c.name||'')+'" style="'+inp+'">');
+ body+=fld((isAr?'\u0627\u0644\u0627\u0633\u0645 \u0628\u0627\u0644\u0639\u0631\u0628\u064a\u0629':'Name (Arabic)'),'<input id="c-nameAr" value="'+(c.nameAr||'')+'" placeholder="\u0645\u062b\u0627\u0644: \u0634\u0631\u0643\u0629 \u0627\u0644\u0631\u064a\u0627\u0636" style="'+inp+';direction:rtl">');
+ body+='</div>';
+ body+='<div class="fr2">'+fld((isAr?'\u0631\u0642\u0645 \u0627\u0644\u062c\u0648\u0627\u0644':'Phone'),'<input id="c-phone" value="'+(c.phone||'')+'" placeholder="+966 5X XXX XXXX" style="'+inp+'">');
+ body+=fld((isAr?'\u0627\u0644\u0628\u0631\u064a\u062f \u0627\u0644\u0625\u0644\u0643\u062a\u0631\u0648\u0646\u064a':'Email'),'<input id="c-email" value="'+(c.email||'')+'" style="'+inp+'">');
+ body+='</div>';
+ body+='<div class="fr2">'+fld((isAr?'\u0627\u0644\u0633\u062c\u0644 \u0627\u0644\u062a\u062c\u0627\u0631\u064a':'CR Number'),'<input id="c-cr" value="'+(c.cr||'')+'" placeholder="1010XXXXXX" style="'+inp+'">');
+ body+=fld((isAr?'\u0627\u0644\u0631\u0642\u0645 \u0627\u0644\u0636\u0631\u064a\u0628\u064a (VAT)':'VAT Number'),'<input id="c-vat" value="'+(c.vatNo||'')+'" placeholder="300XXXXXXXXX000003" style="'+inp+'">');
+ body+='</div>';
+ body+='<div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;padding:4px 0 6px;border-bottom:1px solid var(--bd);margin:10px 0">\u{1f3e2} '+(isAr?'\u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0648\u0637\u0646\u064a':'National Address')+'</div>';
+ body+='<div class="fr2">'+fld((isAr?'\u0631\u0642\u0645 \u0627\u0644\u0645\u0628\u0646\u0649':'Building No.'),'<input id="c-bldg" value="'+(c.buildingNo||'')+'" placeholder="1234" style="'+inp+'">');
+ body+=fld((isAr?'\u0627\u0633\u0645 \u0627\u0644\u0634\u0627\u0631\u0639':'Street'),'<input id="c-street" value="'+(c.street||'')+'" style="'+inp+'">');
+ body+='</div>';
+ body+='<div class="fr2">'+fld((isAr?'\u0627\u0644\u062d\u064a':'District'),'<input id="c-dist" value="'+(c.district||'')+'" style="'+inp+'">');
+ body+=fld((isAr?'\u0627\u0644\u0631\u0645\u0632 \u0627\u0644\u0625\u0636\u0627\u0641\u064a':'Additional No.'),'<input id="c-addno" value="'+(c.additionalNo||'')+'" placeholder="1234" style="'+inp+'">');
+ body+='</div>';
+ body+='<div class="fr2">'+fld((isAr?'\u0627\u0644\u0645\u062f\u064a\u0646\u0629':'City'),'<input id="c-city" value="'+(c.city||'')+'" placeholder="Riyadh" style="'+inp+'">');
+ body+=fld((isAr?'\u0627\u0644\u0631\u0645\u0632 \u0627\u0644\u0628\u0631\u064a\u062f\u064a':'Postal Code'),'<input id="c-zip" value="'+(c.zip||'')+'" placeholder="12345" style="'+inp+'">');
+ body+='</div>';
+ body+=fld((isAr?'\u0627\u0644\u062f\u0648\u0644\u0629':'Country'),'<select id="c-country" style="'+inp+'">'+ctrs.map(function(ct){return '<option'+(c.country===ct?' selected':'')+'>'+ct+'</option>';}).join('')+'</select>');
+ body+=fld((isAr?'\u0645\u0644\u0627\u062d\u0638\u0627\u062a':'Notes'),'<input id="c-notes" value="'+(c.notes||'')+'" style="'+inp+'">');
+ body+='<div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;padding:4px 0 6px;border-bottom:1px solid var(--bd);margin:10px 0">\U0001f517 '+(isAr?'\u0627\u0644\u062d\u0633\u0627\u0628 \u0627\u0644\u0645\u0631\u062a\u0628\u0637':'Linked Account')+'</div>';
+ // Build datalist for bilingual account search
+ var accDL='<datalist id="cAccDL">'
+  +leaves.map(function(a){
+   var ar=a.nameAr||'';
+   var en=a.name||'';
+   return '<option value="'+a.id+'">'+a.id+' | '+en+(ar?' | '+ar:'')+'</option>';
+  }).join('')
+  +'</datalist>';
+ var curAccName='';
+ if(c.linkedAccId){
+  var curA=leaves.find(function(a){return a.id===c.linkedAccId;});
+  if(curA)curAccName=curA.id+' | '+curA.name+(curA.nameAr?' | '+curA.nameAr:'');
+ }
+ body+=accDL;
+ body+=fld(
+  (isAr?'\u0627\u0628\u062d\u062b \u0639\u0646 \u0627\u0644\u062d\u0633\u0627\u0628 '+(isSup?'(\u0630\u0645\u0645 \u062f\u0627\u0626\u0646\u0629)':'(\u0630\u0645\u0645 \u0645\u062f\u064a\u0646\u0629)'):'Search Account '+(isSup?'(Payable)':'(Receivable)')),
+  '<input id="c-acc-search" list="cAccDL" value="'+curAccName+'" autocomplete="off"'
+  +' placeholder="'+(isAr?'\u0627\u0643\u062a\u0628 \u0631\u0642\u0645 \u0623\u0648 \u0627\u0633\u0645 \u0627\u0644\u062d\u0633\u0627\u0628...':'Type account ID or name...')+'"'
+  +' style="'+inp+'">'
+  +'<input type="hidden" id="c-acc" value="'+(c.linkedAccId||'')+'"><div id="c-acc-info" style="font-size:11px;color:var(--t2);margin-top:4px">'
+  +(c.linkedAccId&&curAccName?'✅ '+curAccName:'')+'</div>'
+ );
+ return wrap((c.editId?'Edit ':'New ')+(isSup?(isAr?'\u0645\u0648\u0631\u062f':'Supplier'):(isAr?'\u0639\u0645\u064a\u0644':'Customer')),body,'mSaveContact',(isAr?'\u062d\u0641\u0638':'Save'));
 }
 function mVoucher(){
  var isR=modal==='rcpt',leaves=leafAccs();
@@ -5240,6 +5379,7 @@ function mVoucher(){
 
 // ═══ ACTIONS (called from onclick) ═══════════════════════════
 window.xAction=function(type){
+ if(type==='cancelModal'){modal=null;render();return;}
  if(type==='toggleLang'){setLang(lang==='ar'?'en':'ar');return;}
  if(type==='logout'){currentUser=null;clearSession();render();return;}
  if(type==='switchCo'){currentCompanyId=null;appState='selectCompany';render();return;}
@@ -5390,6 +5530,31 @@ window.xAction=function(type){
   });
   exportXLS(aoa2,'Purchase Tax','Purchase_Tax_'+today());return;
  }
+ if(type==='btnSavePO'){
+  var id2x=(document.getElementById('po-id')||{}).value||nextPO();
+  var date2x=(document.getElementById('po-date')||{}).value||today();
+  var supId2x=(document.getElementById('po-sup')||{}).value||'';
+  var sup2x=supId2x?(db.suppliers||[]).find(function(s){return s.id===supId2x;}):null;
+  var delivery2x=(document.getElementById('po-delivery')||{}).value||'';
+  var status2x=(document.getElementById('po-status')||{}).value||'Draft';
+  var notes2x=(document.getElementById('po-notes')||{}).value||'';
+  var items2x=[];
+  document.querySelectorAll('#poItemsBody tr').forEach(function(tr){
+   var desc=(tr.querySelector('.poDesc')||{}).value||'';
+   var qty=Number((tr.querySelector('.poQty')||{}).value)||1;
+   var price=Number((tr.querySelector('.poPrice')||{}).value)||0;
+   var vat2x=Number((tr.querySelector('.poVat')||{}).value)||15;
+   if(desc||price)items2x.push({desc:desc,qty:qty,price:price,vat:vat2x});
+  });
+  db.purchaseOrders=db.purchaseOrders||[];
+  if(tPO.editId){
+   var idxx=db.purchaseOrders.findIndex(function(p){return p.id===tPO.editId;});
+   if(idxx>=0)db.purchaseOrders[idxx]={id:id2x,date:date2x,supplierId:supId2x,supplierName:sup2x?sup2x.name:'',deliveryDate:delivery2x,status:status2x,notes:notes2x,items:items2x};
+  } else {
+   db.purchaseOrders.push({id:id2x,date:date2x,supplierId:supId2x,supplierName:sup2x?sup2x.name:'',deliveryDate:delivery2x,status:status2x,notes:notes2x,items:items2x});
+  }
+  saveDb();modal=null;view='po';render();return;
+ }
  if(type==='addPO'){tPO={};modal='po';render();return;}
  if(type==='editPO'){var pid=document.querySelector('[data-action="editPO"]')&&event&&event.target?event.target.closest('[data-id]')&&event.target.closest('[data-id]').dataset.id:'';var po2=pid?(db.purchaseOrders||[]).find(function(p){return p.id===pid;}):null;if(po2){tPO=Object.assign({},po2,{editId:po2.id});modal='po';render();}return;}
  if(type==='delPO'){var did=event&&event.target?event.target.closest('[data-id]')&&event.target.closest('[data-id]').dataset.id:'';if(did&&confirm('Delete PO '+did+'?')){db.purchaseOrders=(db.purchaseOrders||[]).filter(function(p){return p.id!==did;});saveDb();render();}return;}
@@ -5439,22 +5604,32 @@ window.xAction=function(type){
  if(type==='backFA'){tFA=null;view='fixedassets';render();return;}
  if(type==='addAT'){modal='at';render();return;}
  if(type==='addLoc'){tLocEdit={};modal='loc';render();return;}
- if(type==='calcDep'){
+  if(type==='calcDep'){
   var aCalc=db.fixedAssets.find(function(x){return x.id===tFA;});
-  if(!aCalc||!aCalc.depAccId||!aCalc.accDepAccId){alert('Set Depreciation accounts on asset first.');return;}
+  if(!aCalc){alert(lang==='ar'?'\u0627\u062e\u062a\u0631 \u0627\u0644\u0623\u0635\u0644 \u0623\u0648\u0644\u0627\u064b':'Select asset first');return;}
+  if(!aCalc.depAccId||!aCalc.accDepAccId){
+   alert(lang==='ar'?'\u064a\u062c\u0628 \u062a\u062d\u062f\u064a\u062f \u062d\u0633\u0627\u0628 \u0645\u0635\u0631\u0648\u0641 \u0627\u0644\u0625\u0647\u0644\u0627\u0643 \u0648\u062d\u0633\u0627\u0628 \u0645\u062c\u0645\u0639 \u0627\u0644\u0625\u0647\u0644\u0627\u0643 \u0641\u064a \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0623\u0635\u0644':'Set Depreciation Expense Account and Accumulated Depreciation Account on asset first.');
+   return;
+  }
   var mDep=Math.round(calcAnnualDep(aCalc)/12*100)/100;
-  if(!mDep){alert('No depreciation to post.');return;}
-  var dDesc='Monthly Depreciation: '+aCalc.name+' ('+today()+')';
+  if(!mDep||mDep<=0){alert(lang==='ar'?'\u0644\u0627 \u064a\u0648\u062c\u062f \u0625\u0647\u0644\u0627\u0643 \u0644\u062a\u0631\u062d\u064a\u0644\u0647':'No depreciation to post.');return;}
+  var maxDep=(aCalc.cost||0)-(aCalc.salvageValue||0);
+  var posted=aCalc.accDepreciation||0;
+  if(posted>=maxDep){alert(lang==='ar'?'\u0627\u0644\u0623\u0635\u0644 \u0645\u0633\u062a\u0647\u0644\u0643 \u0628\u0627\u0644\u0643\u0627\u0645\u0644':'Asset fully depreciated.');return;}
+  var actualDep=Math.min(mDep,maxDep-posted);
+  var dDesc=(lang==='ar'?'\u0625\u0647\u0644\u0627\u0643 \u0634\u0647\u0631\u064a: ':'Monthly Dep: ')+aCalc.name;
   var dJE={id:'JE'+String(db.journals.length+1).padStart(3,'0'),date:today(),desc:dDesc,
-   lines:[{acc:aCalc.depAccId,dr:mDep,cr:0},{acc:aCalc.accDepAccId,dr:0,cr:mDep}]};
+   lines:[{acc:aCalc.depAccId,dr:actualDep,cr:0},{acc:aCalc.accDepAccId,dr:0,cr:actualDep}]};
   db.journals.push(dJE);
   var dA=db.accounts.find(function(x){return x.id===aCalc.depAccId;});
   var adA=db.accounts.find(function(x){return x.id===aCalc.accDepAccId;});
-  if(dA)dA.bal=(dA.bal||0)+mDep;
-  if(adA)adA.bal=(adA.bal||0)+mDep;
-  db.assetTransactions.push({id:nextAT(),assetId:aCalc.id,date:today(),type:'Depreciation',amount:mDep,desc:dDesc,jeId:dJE.id});
-  aCalc.accDepreciation=(aCalc.accDepreciation||0)+mDep;
-  save();render();alert('Depreciation of '+N(mDep)+' posted. JE: '+dJE.id);return;
+  if(dA)dA.bal=(dA.bal||0)+actualDep;
+  if(adA)adA.bal=(adA.bal||0)+actualDep;
+  db.assetTransactions=db.assetTransactions||[];
+  db.assetTransactions.push({id:nextAT(),assetId:aCalc.id,date:today(),type:'Depreciation',amount:actualDep,desc:dDesc,jeId:dJE.id});
+  aCalc.accDepreciation=(aCalc.accDepreciation||0)+actualDep;
+  save();render();
+  alert('\u2705 '+(lang==='ar'?'\u062a\u0645 \u062a\u0631\u062d\u064a\u0644 \u0627\u0644\u0625\u0647\u0644\u0627\u0643: ':'Depreciation posted: ')+N(actualDep)+' | '+dJE.id);return;
  }
  if(type==='printCOA'||type==='xlsCOA'||type==='wordCOA'){
   // Build unified COA rows
@@ -5972,7 +6147,25 @@ function bindEvents(){
  on('.jeAS','focus',function(el){
   var i=el.dataset.i;
   var drop=document.querySelector('.jeAD[data-i="'+i+'"]');
-  if(drop)drop.style.display='block';
+  if(drop){
+   var rect=el.getBoundingClientRect();
+   var spaceBelow=window.innerHeight-rect.bottom;
+   var spaceAbove=rect.top;
+   // Show above if not enough space below
+   if(spaceBelow<220&&spaceAbove>spaceBelow){
+    drop.style.top='auto';
+    drop.style.bottom=(window.innerHeight-rect.top+2)+'px';
+   } else {
+    drop.style.bottom='auto';
+    drop.style.top=(rect.bottom+2)+'px';
+   }
+   drop.style.left=rect.left+'px';
+   drop.style.width=Math.max(rect.width,400)+'px';
+   drop.style.display='block';
+   // Focus the select for keyboard navigation
+   var sel=drop.querySelector('.jeA');
+   if(sel&&!el.value)sel.selectedIndex=0;
+  }
  });
  on('.jeAS','input',function(el){
   var i=el.dataset.i;
@@ -6812,9 +7005,26 @@ function bindEvents(){
  on('[data-delsup]','click',function(el,e){e.stopPropagation();if(confirm('Delete?')){db.suppliers=db.suppliers.filter(function(s){return s.id!==el.dataset.delsup;});if(supView&&supView.id===el.dataset.delsup)supView=null;save();render();}});
  on1('mSaveContact','click',function(){
   var isSup=modal==='sup';
+  var isAr=lang==='ar';
   var name=((document.getElementById('c-name')||{}).value||'').trim();
-  if(!name){alert('Name required.');return;}
-  var data={name:name,phone:((document.getElementById('c-phone')||{}).value||'').trim(),email:((document.getElementById('c-email')||{}).value||'').trim(),cr:((document.getElementById('c-cr')||{}).value||'').trim(),vatNo:((document.getElementById('c-vat')||{}).value||'').trim(),buildingNo:((document.getElementById('c-bldg')||{}).value||'').trim(),street:((document.getElementById('c-street')||{}).value||'').trim(),district:((document.getElementById('c-dist')||{}).value||'').trim(),city:((document.getElementById('c-city')||{}).value||'').trim(),country:(document.getElementById('c-country')||{}).value||'',notes:((document.getElementById('c-notes')||{}).value||'').trim(),linkedAccId:(document.getElementById('c-acc')||{}).value||''};
+  if(!name){alert(isAr?'اسم العميل/المورد مطلوب':'Name required.');return;}
+  var data={
+   name:name,
+   nameAr:((document.getElementById('c-nameAr')||{}).value||'').trim(),
+   phone:((document.getElementById('c-phone')||{}).value||'').trim(),
+   email:((document.getElementById('c-email')||{}).value||'').trim(),
+   cr:((document.getElementById('c-cr')||{}).value||'').trim(),
+   vatNo:((document.getElementById('c-vat')||{}).value||'').trim(),
+   buildingNo:((document.getElementById('c-bldg')||{}).value||'').trim(),
+   street:((document.getElementById('c-street')||{}).value||'').trim(),
+   district:((document.getElementById('c-dist')||{}).value||'').trim(),
+   additionalNo:((document.getElementById('c-addno')||{}).value||'').trim(),
+   city:((document.getElementById('c-city')||{}).value||'').trim(),
+   zip:((document.getElementById('c-zip')||{}).value||'').trim(),
+   country:(document.getElementById('c-country')||{}).value||'',
+   notes:((document.getElementById('c-notes')||{}).value||'').trim(),
+   linkedAccId:(document.getElementById('c-acc')||{}).value||''
+  };
   var arr=isSup?db.suppliers:db.customers,t=isSup?tSup:tCus;
   if(t.editId){var obj=arr.find(function(x){return x.id===t.editId;});if(obj){Object.assign(obj,data);if(isSup&&supView&&supView.id===t.editId)supView=obj;else if(!isSup&&cusView&&cusView.id===t.editId)cusView=obj;}}
   else{var nid=isSup?nextSUP():nextCUS();arr.push(Object.assign({id:nid},data));}
@@ -6973,10 +7183,20 @@ function bindEvents(){
    var xp=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
    var assets=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
    var liab=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+accBalRange(a.id,f,t2);},0);
-   var data={company:db.company.name,revenue:rev,expenses:xp,netIncome:rev-xp,assets:assets,liabilities:liab,equity:assets-liab,type:aiAnalysisState.type};
+   var data={company:db.company.name,currency:db.company.currency||'SAR',revenue:rev,expenses:xp,netIncome:rev-xp,assets:assets,liabilities:liab,equity:assets-liab,type:aiAnalysisState.type};
+   var cur5=db.company.currency||'SAR';
+   var typePrompts={
+    comprehensive:{ar:'تحليل مالي شامل — يشمل: ملخص تنفيذي، النسب المالية الكاملة (ربحية، سيولة، كفاءة، رفع مالي)، تقييم الأداء، نقاط القوة والضعف، التوصيات',en:'Comprehensive Financial Analysis — include: executive summary, full financial ratios (profitability, liquidity, efficiency, leverage), performance evaluation, SWOT, recommendations'},
+    profitability:{ar:'تحليل الربحية — يشمل: هامش الربح الإجمالي والصافي، العائد على الأصول (ROA)، العائد على حقوق الملكية (ROE)، EBITDA، اتجاهات الربحية، المقارنة بالمعايير',en:'Profitability Analysis — include: gross & net margins, ROA, ROE, EBITDA, profitability trends, benchmark comparison'},
+    liquidity:{ar:'تحليل السيولة — يشمل: نسبة التداول، السيولة السريعة، النقدية، رأس المال العامل، التدفق النقدي، قدرة سداد الالتزامات',en:'Liquidity Analysis — include: current ratio, quick ratio, cash ratio, working capital, cash flow, debt payment capacity'},
+    efficiency:{ar:'كفاءة التشغيل — يشمل: معدل دوران الأصول، دوران المخزون، فترة التحصيل (DSO)، فترة السداد (DPO)، دورة التحويل النقدي (CCC)',en:'Operational Efficiency — include: asset turnover, inventory turnover, DSO, DPO, Cash Conversion Cycle'},
+    risk:{ar:'تحليل المخاطر المالية — يشمل: نسبة الدين للملكية، نسبة تغطية الفائدة، Altman Z-Score، مخاطر الائتمان، مخاطر السيولة، المخاطر التشغيلية',en:'Financial Risk Analysis — include: debt/equity ratio, interest coverage, Altman Z-Score, credit risk, liquidity risk, operational risk'},
+    comparison:{ar:'التحليل الزمني والمقارن — يشمل: تحليل الاتجاهات، معدل النمو، الأداء المقارن بالسنة السابقة، التنبؤ للفترة القادمة',en:'Time Series & Comparative Analysis — include: trend analysis, growth rate, YoY performance comparison, forward-looking forecast'}
+   };
+   var typeLabel=typePrompts[aiAnalysisState.type]||typePrompts.comprehensive;
    var prompt=lang==='ar'?
-    'قم بإجراء تحليل مالي شامل ('+aiAnalysisState.type+') للشركة: '+db.company.name+'\n\nالبيانات المالية:\n'+JSON.stringify(data,null,2)+'\n\nالمطلوب:\n1. ملخص تنفيذي\n2. تحليل مفصل للبيانات المالية\n3. حساب المؤشرات والنسب المالية الرئيسية\n4. تقييم الوضع المالي\n5. نقاط القوة والضعف\n6. التوصيات والمقترحات':
-    'Perform comprehensive financial analysis ('+aiAnalysisState.type+') for: '+db.company.name+'\n\nFinancial Data:\n'+JSON.stringify(data,null,2)+'\n\nRequired:\n1. Executive summary\n2. Detailed financial data analysis\n3. Calculate key financial ratios\n4. Financial position assessment\n5. Strengths and weaknesses\n6. Recommendations';
+    'قم بإجراء '+typeLabel.ar+' للشركة: '+db.company.name+'\nالعملة: '+cur5+' (استخدم هذه العملة في جميع الأرقام)\n\nالبيانات المالية:\n'+JSON.stringify(data,null,2)+'\n\nتعليمات:\n- استخدم الأرقام الفعلية في حساباتك\n- اعرض النسب بشكل واضح مع التفسير\n- قدم توصيات عملية وقابلة للتطبيق\n- اجعل التقرير احترافياً ومنظماً':
+    'Perform '+typeLabel.en+' for: '+db.company.name+'\nCurrency: '+cur5+' (use this currency for all figures)\n\nFinancial Data:\n'+JSON.stringify(data,null,2)+'\n\nInstructions:\n- Use actual figures in calculations\n- Show ratios clearly with interpretation\n- Provide practical, actionable recommendations\n- Keep the report professional and organized';
    aiAnalysisState.result=await callAI(prompt);
   }catch(e){aiAnalysisState.result='Error: '+e.message;}
   aiAnalysisState.loading=false;render();
@@ -6995,6 +7215,20 @@ function bindEvents(){
   }catch(e){aiCashState.result='Error: '+e.message;}
   aiCashState.loading=false;render();
  });
+ // ── AI Analysis type selector ─────────────────────────────
+ on('[data-anatype]','click',function(el){
+  aiAnalysisState.type=el.dataset.anatype;
+  aiAnalysisState.result='';
+  render();
+ });
+
+ // ── AI Forecast type selector ─────────────────────────────
+ on('[data-fctype]','click',function(el){
+  aiForecastState.type=el.dataset.fctype;
+  aiForecastState.result='';
+  render();
+ });
+
  on1('btnAIForecast','click',async function(){
   aiForecastState.loading=true;render();
   try{
@@ -7003,12 +7237,13 @@ function bindEvents(){
    var xp=db.journals.reduce(function(s,j){j.lines.forEach(function(l){var a=db.accounts.find(function(ac){return ac.id===l.acc;});if(a&&a.type==='Expense')s+=(l.dr||0);});return s;},0);
    var assets=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain;}).reduce(function(s,a){return s+(a.bal||0);},0);
    var liab=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain;}).reduce(function(s,a){return s+(a.bal||0);},0);
-   var data={company:db.company.name,revenue:rev,expenses:xp,netIncome:rev-xp,assets:assets,liabilities:liab,forecastMonths:period,type:aiForecastState.type};
+   var data={company:db.company.name,currency:db.company.currency||'SAR',revenue:rev,expenses:xp,netIncome:rev-xp,assets:assets,liabilities:liab,forecastMonths:period,type:aiForecastState.type};
+   var cur2=db.company.currency||'SAR';
    var typeNamesAr={sales:'تنبؤ المبيعات',bankruptcy:'تحليل مخاطر الإفلاس — Altman Z-Score',cashflow:'تنبؤ التدفق النقدي',budget:'الميزانية التقديرية'};
    var typeNamesEn={sales:'Sales Forecast',bankruptcy:'Bankruptcy Risk Analysis — Altman Z-Score',cashflow:'Cash Flow Forecast',budget:'Budget Forecast'};
    var prompt=lang==='ar'?
-    'قم بإعداد '+(typeNamesAr[aiForecastState.type]||aiForecastState.type)+' للشركة: '+db.company.name+'\n\nالبيانات المالية:\n'+JSON.stringify(data,null,2)+'\n\nالمطلوب:\n1. تحليل الوضع الحالي\n2. تنبؤ للـ '+period+' شهر مع الأرقام\n3. الافتراضات\n4. سيناريوهات: متفائل / محايد / متشائم\n5. التوصيات'+(aiForecastState.type==='bankruptcy'?'\n6. حساب Altman Z-Score وتحديد منطقة الخطر':''):
-    'Prepare '+(typeNamesEn[aiForecastState.type]||aiForecastState.type)+' for: '+db.company.name+'\n\nCurrent Financial Data:\n'+JSON.stringify(data,null,2)+'\n\nRequired:\n1. Current financial position analysis\n2. '+period+'-month forecast with figures\n3. Forecast assumptions\n4. Scenarios: Optimistic / Neutral / Pessimistic\n5. Key indicators and recommendations'+(aiForecastState.type==='bankruptcy'?'\n6. Calculate Altman Z-Score and identify risk zone':'');
+    'قم بإعداد '+(typeNamesAr[aiForecastState.type]||aiForecastState.type)+' للشركة: '+db.company.name+'\nالعملة المستخدمة: '+cur2+' (استخدم هذه العملة في جميع الأرقام والجداول)\n\nالبيانات المالية:\n'+JSON.stringify(data,null,2)+'\n\nالمطلوب:\n1. تحليل الوضع الحالي\n2. تنبؤ للـ '+period+' شهر مع الأرقام بعملة '+cur2+'\n3. الافتراضات\n4. سيناريوهات: متفائل / محايد / متشائم\n5. التوصيات'+(aiForecastState.type==='bankruptcy'?'\n6. حساب Altman Z-Score وتحديد منطقة الخطر':''):
+    'Prepare '+(typeNamesEn[aiForecastState.type]||aiForecastState.type)+' for: '+db.company.name+'\nCurrency: '+cur2+' (use this currency for ALL figures and tables)\n\nCurrent Financial Data:\n'+JSON.stringify(data,null,2)+'\n\nRequired:\n1. Current financial position analysis\n2. '+period+'-month forecast with figures in '+cur2+'\n3. Forecast assumptions\n4. Scenarios: Optimistic / Neutral / Pessimistic\n5. Key indicators and recommendations'+(aiForecastState.type==='bankruptcy'?'\n6. Calculate Altman Z-Score and identify risk zone':'');
    aiForecastState.result=await callAI(prompt);
   }catch(e){aiForecastState.result='Error: '+e.message;}
   aiForecastState.loading=false;render();
@@ -7141,7 +7376,7 @@ function bindEvents(){
  on1('btnCancelFY','click',function(){
   var activeFY3=(db.fiscalYears||[]).find(function(y){return y.status==='open';});
   if(!activeFY3)return;
-  if(!confirm(lang==='ar'?'هل تريد إلغاء وحذف السنة المالية '+activeFY3.year+'؟ لن يتم حذف أي قيود.':'Cancel and delete fiscal year '+activeFY3.year+'? No entries will be deleted.'))return;
+  if(!confirm(lang==='ar'?'هل تريد التراجع عن إغلاق السنة المالية '+activeFY3.year+'؟ سيتم حذف السنة المالية مع الإبقاء على جميع القيود المدخلة.':'Undo closing fiscal year '+activeFY3.year+'? The fiscal year will be removed but all journal entries will be kept.'))return;
   db.fiscalYears=(db.fiscalYears||[]).filter(function(y){return y.year!==activeFY3.year;});
   // Remove any closing/opening entries for this year
   db.journals=(db.journals||[]).filter(function(j){return j.id!=='JE-CLOSE-'+activeFY3.year&&j.id!=='JE-OPEN-'+(activeFY3.year+1);});
@@ -7218,6 +7453,25 @@ function bindEvents(){
   render();
  });
 
+
+ // Account search in customer/supplier form
+ on('#c-acc-search','input',function(el){
+  var val=el.value.trim();
+  var hidden=document.getElementById('c-acc');
+  var info=document.getElementById('c-acc-info');
+  if(!val){if(hidden)hidden.value='';if(info)info.textContent='';return;}
+  // Find by ID match first, then name match
+  var leaves2=leafAccs();
+  var found=leaves2.find(function(a){return a.id===val||val.startsWith(a.id+'|')||val.startsWith(a.id+' |');});
+  if(!found)found=leaves2.find(function(a){return val.indexOf(a.id)>-1;});
+  if(found){
+   if(hidden)hidden.value=found.id;
+   if(info)info.innerHTML='<span style="color:var(--gn)">✅ '+found.id+' - '+found.name+(found.nameAr?' | '+found.nameAr:'')+'</span>';
+  } else {
+   if(hidden)hidden.value='';
+   if(info)info.innerHTML='<span style="color:var(--t2)">'+(lang==='ar'?'اكتب لبحث عن حساب...':'Type to search...')+'</span>';
+  }
+ });
 
  // ── Budget Handlers ───────────────────────────────────────
  on('[data-budget-edit]','click',function(el){
@@ -7357,6 +7611,69 @@ function bindEvents(){
  on('.poDelRow','click',function(el){var tr=el.closest('tr');if(tr)tr.remove();});
  // Tax report Excel
  if(window.xAction){}
+ // ── Accordion Nav Handler ──────────────────────────────────
+ on('.nacc','click',function(el){
+  var secKey=decodeURIComponent(el.dataset.sec||'');
+  var isOpen=el.dataset.open==='1';
+  // Toggle
+  openSections[secKey]=!isOpen;
+  el.dataset.open=isOpen?'0':'1';
+  var arr=el.querySelector('.nacc-arr');
+  if(arr)arr.style.transform=isOpen?'rotate(0deg)':'rotate(90deg)';
+  var body=el.nextElementSibling;
+  if(body&&body.classList.contains('nacc-body')){
+   body.style.maxHeight=isOpen?'0':'800px';
+  }
+ });
+
+ // PO line totals — live calculation
+ function updatePOTotals(){
+  var grand=0;
+  document.querySelectorAll('#poItemsBody tr').forEach(function(tr){
+   var qty=Number((tr.querySelector('.poQty')||{}).value)||0;
+   var price=Number((tr.querySelector('.poPrice')||{}).value)||0;
+   var line=qty*price;
+   grand+=line;
+   var td=tr.querySelector('.poLineTotal');
+   if(td)td.textContent=line?N(line):'';
+  });
+  var tot=document.getElementById('poGrandTotal');
+  if(tot)tot.textContent=N(grand);
+ }
+ on('.poQty,.poPrice,.poVat','input',function(){updatePOTotals();});
+ on1('poAddRow','click',function(){
+  var tbody=document.getElementById('poItemsBody');if(!tbody)return;
+  var i=tbody.rows.length;
+  var st='padding:5px 8px;border:1px solid var(--bd2);border-radius:4px;font-size:12px;width:100%;background:var(--sf);color:var(--tx)';
+  // Build item options
+  var opts='<option value="">-- '+(lang==='ar'?'اختر صنفاً':'Select item')+' --</option><option value="__manual__">'+(lang==='ar'?'✏️ إدخال يدوي':'✏️ Enter manually')+'</option>'
+   +(db.items||[]).map(function(it){return '<option value="'+it.id+'" data-price="'+(it.avgCost||0)+'" data-vat="'+(it.vat||15)+'" data-name="'+it.name+'">'+it.id+' - '+it.name+'</option>';}).join('');
+  var tr=document.createElement('tr');
+  tr.id='por-'+i;
+  tr.innerHTML='<td style="min-width:200px">'
+   +'<select class="poItemSel" data-i="'+i+'" style="'+st+';margin-bottom:3px" onchange="(function(sel){var o=sel.options[sel.selectedIndex];var tr=sel.closest(\'tr\');var di=tr.querySelector(\'.poDesc\');if(o.value===\'__manual__\'||!o.value){di.style.display=\'block\';di.focus();}else{di.value=o.dataset.name||o.text;di.style.display=\'none\';tr.querySelector(\'.poPrice\').value=o.dataset.price||0;tr.querySelector(\'.poVat\').value=o.dataset.vat||15;}calcPOTotals();})(this);">'+opts+'</select>'
+   +'<input class="poDesc" data-i="'+i+'" placeholder="'+(lang==='ar'?'اكتب الوصف':'Description')+'" style="'+st+';display:none">'
+   +'</td>'
+   +'<td><input class="poQty" data-i="'+i+'" type="number" value="1" min="0.01" step="0.01" style="width:80px;padding:5px;border:1px solid var(--bd2);border-radius:4px;font-size:12px;background:var(--sf);color:var(--tx)"></td>'
+   +'<td><input class="poPrice" data-i="'+i+'" type="number" value="0" step="0.01" style="width:100px;padding:5px;border:1px solid var(--bd2);border-radius:4px;font-size:12px;background:var(--sf);color:var(--tx)"></td>'
+   +'<td><input class="poVat" data-i="'+i+'" type="number" value="15" style="width:60px;padding:5px;border:1px solid var(--bd2);border-radius:4px;font-size:12px;background:var(--sf);color:var(--tx)"></td>'
+   +'<td class="tr mn poLineTotal" style="padding:5px 8px"></td>'
+   +'<td><button type="button" onclick="this.closest(\'tr\').remove();calcPOTotals();" style="background:#b91c1c;color:white;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:13px">×</button></td>';
+  tbody.appendChild(tr);
+  tr.querySelectorAll('.poQty,.poPrice,.poVat').forEach(function(inp){inp.addEventListener('input',window.calcPOTotals||function(){});});
+ });
+ on('.poDelRow','click',function(el){var tr=el.closest('tr');if(tr){tr.remove();updatePOTotals();}});
+
+ // Global modal button handler — fixes lost listeners on re-render
+ on('.modal .btn.bp[id]','click',function(el){
+  var id=el.id||el.dataset.action||'';
+  if(!id)return;
+  // Trigger click on original listener if exists, else try xAction
+  var handler=window['__handler_'+id];
+  if(handler){handler();}
+  else{window.xAction(id);}
+ });
+
  // Pagination handler
  on('[data-page]','click',function(el){
   var pg=parseInt(el.dataset.page)||1;
@@ -7409,8 +7726,57 @@ function bindEvents(){
    else if(key==='sales2')printSalesInvoice(cur3.id);
   }
   else if(action==='post'){
-   var cur4=items[st.idx];if(!cur4)return;
-   if((key==='purchases'||key==='sales2')&&!cur4.posted){cur4.posted=true;save();}
+   var cur4=items[st.idx];if(!cur4||cur4.posted)return;
+   var isAr4=lang==='ar';
+   var co4=db.company;
+   var vatRate4=co4.vatRate||15;
+
+   if(key==='sales2'){
+    // Sales Invoice → Dr. Receivable / Cr. Revenue + VAT
+    var sub4=(cur4.lines||[]).reduce(function(s,l){return s+l.qty*l.price;},0);
+    var vat4=(cur4.lines||[]).reduce(function(s,l){return s+l.qty*l.price*(l.vat||vatRate4)/100;},0);
+    var tot4=sub4+vat4;
+    // Find accounts
+    var revAcc=db.accounts.find(function(a){return a.type==='Revenue'&&!a.isMain&&(a.name.indexOf('Local Sales')>-1||a.name.indexOf('4101-01')>-1);});
+    if(!revAcc)revAcc=db.accounts.filter(function(a){return a.type==='Revenue'&&!a.isMain;})[0];
+    var vatAcc=db.accounts.find(function(a){return a.id==='2103-01'||a.name.indexOf('VAT Collected')>-1;});
+    var recAcc=db.accounts.find(function(a){return a.id==='1103-01'||a.name.indexOf('Local Customers')>-1;});
+    if(!recAcc)recAcc=db.accounts.filter(function(a){return a.type==='Asset'&&!a.isMain&&(a.name.indexOf('Receiv')>-1||a.name.indexOf('Customer')>-1);})[0];
+    // Check linked customer account
+    if(cur4.customerId){var cus4=db.customers.find(function(c){return c.id===cur4.customerId;});if(cus4&&cus4.linkedAccId){var la4=db.accounts.find(function(a){return a.id===cus4.linkedAccId;});if(la4)recAcc=la4;}}
+    if(!revAcc){alert(isAr4?'لم يتم العثور على حساب إيرادات. تأكد من دليل الحسابات':'Revenue account not found in Chart of Accounts.');return;}
+    if(!recAcc){alert(isAr4?'لم يتم العثور على حساب الذمم المدينة':'Receivable account not found.');return;}
+    var jeLines4=[{acc:recAcc.id,dr:tot4,cr:0}];
+    if(vatAcc&&vat4>0)jeLines4.push({acc:vatAcc.id,dr:0,cr:vat4});
+    jeLines4.push({acc:revAcc.id,dr:0,cr:sub4});
+    var je4={id:'JE'+String(db.journals.length+1).padStart(3,'0'),date:cur4.date,desc:(isAr4?'فاتورة مبيعات: ':'Sales Invoice: ')+cur4.id+' — '+(cur4.customerName||''),lines:jeLines4};
+    db.journals.push(je4);
+    cur4.posted=true;cur4.jeId=je4.id;
+    save();render();
+    alert('✅ '+(isAr4?'تم ترحيل الفاتورة وإنشاء قيد: ':'Invoice posted, JE created: ')+je4.id);
+   }
+   else if(key==='purchases'){
+    // Purchase Invoice → Dr. Expense/Inventory + VAT / Cr. Payable
+    var sub5=(cur4.lines||[]).reduce(function(s,l){return s+l.qty*l.cost;},0);
+    var vat5=(cur4.lines||[]).reduce(function(s,l){return s+l.qty*l.cost*(l.vat||vatRate4)/100;},0);
+    var tot5=sub5+vat5;
+    var invAcc5=db.accounts.find(function(a){return a.id==='1104-01'||a.name.indexOf('Merchandise Inventory')>-1;});
+    if(!invAcc5)invAcc5=db.accounts.filter(function(a){return a.type==='Expense'&&!a.isMain;})[0];
+    var vatInAcc5=db.accounts.find(function(a){return a.id==='1105-03'||a.name.indexOf('VAT Input')>-1;});
+    var payAcc5=db.accounts.find(function(a){return a.id==='2101-01'||a.name.indexOf('Local Suppliers')>-1;});
+    if(!payAcc5)payAcc5=db.accounts.filter(function(a){return a.type==='Liability'&&!a.isMain&&(a.name.indexOf('Payable')>-1||a.name.indexOf('Supplier')>-1);})[0];
+    if(cur4.supplierId){var sup5=db.suppliers.find(function(s){return s.id===cur4.supplierId;});if(sup5&&sup5.linkedAccId){var la5=db.accounts.find(function(a){return a.id===sup5.linkedAccId;});if(la5)payAcc5=la5;}}
+    if(!invAcc5){alert(isAr4?'لم يتم العثور على حساب المخزون أو المشتريات':'Inventory/Expense account not found.');return;}
+    if(!payAcc5){alert(isAr4?'لم يتم العثور على حساب الموردين':'Payable account not found.');return;}
+    var jeLines5=[{acc:invAcc5.id,dr:sub5,cr:0}];
+    if(vatInAcc5&&vat5>0)jeLines5.push({acc:vatInAcc5.id,dr:vat5,cr:0});
+    jeLines5.push({acc:payAcc5.id,dr:0,cr:tot5});
+    var je5={id:'JE'+String(db.journals.length+1).padStart(3,'0'),date:cur4.date,desc:(isAr4?'فاتورة مشتريات: ':'Purchase Invoice: ')+cur4.id+' — '+(cur4.supplierName||''),lines:jeLines5};
+    db.journals.push(je5);
+    cur4.posted=true;cur4.jeId=je5.id;
+    save();render();
+    alert('✅ '+(isAr4?'تم ترحيل الفاتورة وإنشاء قيد: ':'Invoice posted, JE created: ')+je5.id);
+   }
   }
   else if(action==='delete'){
    var cur5=items[st.idx];if(!cur5)return;
