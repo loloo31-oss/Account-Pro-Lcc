@@ -247,6 +247,58 @@ try{
  }
 }catch(e){HAS_CLOUD=false;}
 
+// ── Auto sub-ledger account generation for Customers/Suppliers ──────────
+// When a new customer/supplier is added (see mSaveContact), or when an
+// existing one is missing a valid linked account (see the normalizeDB()
+// backfill below), the app auto-creates a dedicated sub-ledger account for
+// it under the correct parent: Local/Foreign Customers (1103-01/1103-02)
+// for customers, Local/Foreign Suppliers (2101-01/2101-02) for suppliers --
+// picked by whether the contact's country is Saudi Arabia -- falling back
+// to the main Accounts Receivable/Payable account (1103/2101) directly if
+// those specific sub-accounts don't exist in the current COA (e.g. after a
+// different chart was imported). Generated codes look like "1103-01-001".
+// These helpers take the accounts array explicitly (rather than reading the
+// global db) because normalizeDB() also runs before `db` itself is set.
+function contactParentAccId(accountsArr,isSup,country){
+ var isForeign=!!country&&country!=='Saudi Arabia';
+ var candidates=isSup
+  ?(isForeign?['2101-02','2101']:['2101-01','2101'])
+  :(isForeign?['1103-02','1103']:['1103-01','1103']);
+ for(var i=0;i<candidates.length;i++){
+  if(accountsArr.some(function(a){return a.id===candidates[i];}))return candidates[i];
+ }
+ return null;
+}
+function genSubLedgerAccId(accountsArr,parentId){
+ var prefix=parentId+'-';
+ var maxN=0;
+ accountsArr.forEach(function(a){
+  if(a.id.indexOf(prefix)===0){
+   var rest=a.id.slice(prefix.length);
+   if(/^\d+$/.test(rest)){var n=parseInt(rest,10);if(n>maxN)maxN=n;}
+  }
+ });
+ var seq=String(maxN+1);
+ while(seq.length<3)seq='0'+seq;
+ return prefix+seq;
+}
+function autoCreateContactAccount(accountsArr,isSup,contact){
+ var parentId=contactParentAccId(accountsArr,isSup,contact.country);
+ if(!parentId)return '';
+ var newId=genSubLedgerAccId(accountsArr,parentId);
+ accountsArr.push({
+  id:newId,
+  name:contact.name||newId,
+  nameAr:contact.nameAr||'',
+  type:isSup?'Liability':'Asset',
+  normal:isSup?'Credit':'Debit',
+  bal:0,
+  isMain:false,
+  pid:parentId,
+  autoGen:true
+ });
+ return newId;
+}
 function normalizeDB(d){
  if(!d.exp)d.exp={};
  if(!d.customers)d.customers=[];
@@ -285,6 +337,37 @@ function normalizeDB(d){
  if(!d.users)d.users=[];
  if(d.company.vatRate===undefined)d.company.vatRate=15;
  d.accounts.filter(function(a){return a.isMain;}).forEach(function(a){if(d.exp[a.id]===undefined)d.exp[a.id]=true;});
+ // Backfill: any customer/supplier that does not have its OWN dedicated
+ // sub-ledger account yet gets one auto-generated -- see
+ // autoCreateContactAccount() above. A linked account only counts as
+ // "already fine" when it (a) still exists and (b) is a genuine leaf
+ // (no other account is nested under it) -- this also catches contacts
+ // that were linked directly to a shared bucket/Main account (e.g. plain
+ // "1103" / "2101" / "1103-01" / "2101-01") rather than to a personal
+ // sub-account, which is exactly the "no account number shown" case.
+ // Count how many contacts currently point at each linkedAccId, so that
+ // two customers/suppliers sharing one generic bucket account (e.g. both
+ // linked straight to "1103-01"/"2101-01") are BOTH recognized as not
+ // having a personal account, regardless of processing order.
+ var linkCount={};
+ d.customers.concat(d.suppliers).forEach(function(c){
+  if(c.linkedAccId)linkCount[c.linkedAccId]=(linkCount[c.linkedAccId]||0)+1;
+ });
+ function hasOwnLeafAcc(linkedId){
+  if(!linkedId)return false;
+  var acc=d.accounts.find(function(a){return a.id===linkedId;});
+  if(!acc)return false;
+  if(acc.isMain)return false;
+  if(d.accounts.some(function(x){return x.pid===acc.id;}))return false;
+  if((linkCount[linkedId]||0)>1)return false;
+  return true;
+ }
+ d.customers.forEach(function(c){
+  if(!hasOwnLeafAcc(c.linkedAccId)){var nid=autoCreateContactAccount(d.accounts,false,c);if(nid)c.linkedAccId=nid;}
+ });
+ d.suppliers.forEach(function(s){
+  if(!hasOwnLeafAcc(s.linkedAccId)){var nid=autoCreateContactAccount(d.accounts,true,s);if(nid)s.linkedAccId=nid;}
+ });
  return d;
 }
 function loadFromLocalStorage(){
@@ -324,6 +407,17 @@ function cur(){return db.company.currency||'SAR';}
 function vatR(){return Number(db.company.vatRate)||15;}
 function today(){return new Date().toISOString().slice(0,10);}
 function accN(a){return (lang==='ar'&&a&&a.nameAr)?a.nameAr:a?a.name:'';}
+// Sums an account's balance recursively through any child accounts (needed
+// since Local/Foreign Customers & Suppliers, e.g. "1103-01", can now have
+// their own auto-generated children -- see autoCreateContactAccount() --
+// so postings land on the deepest leaf, not that in-between account, and a
+// parent's displayed balance must roll those up rather than show its own
+// (unused) bal field). An account with no children just returns its own bal.
+function acctRollupBal(a){
+ var children=db.accounts.filter(function(x){return x.pid===a.id;});
+ if(!children.length)return a.bal||0;
+ return children.reduce(function(s,c){return s+acctRollupBal(c);},0);
+}
 function aName(id){var a=db.accounts.find(function(x){return x.id===id;});if(!a)return id;return (lang==='ar'&&a.nameAr)?a.nameAr:a.name;}
 function leafAccs(){return db.accounts.filter(function(a){return !db.accounts.some(function(s){return s.pid===a.id;});});}
 function mainBal(id){return db.accounts.filter(function(s){return s.pid===id;}).reduce(function(s,x){return s+x.bal;},0);}
@@ -3584,9 +3678,9 @@ function pCOA(){
   h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="ct" style="margin:0">'+t+'</div><span class="mn" style="font-size:12px;font-weight:700;color:var(--t2)">'+N(tot)+'</span></div>';
   h+='<div class="tw"><table><thead><tr><th style="width:26px"></th><th>Code</th><th>Account</th><th>Level</th><th>Normal</th><th class="tr">Balance</th></tr></thead><tbody>';
   mains.forEach(function(m){
-   var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+   var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
    var exp=db.exp[m.id]!==false;
-   var mbal=subs.reduce(function(s,x){return s+x.bal;},0);
+   var mbal=subs.reduce(function(s,x){return s+acctRollupBal(x);},0);
    h+='<tr class="mrow"><td style="text-align:center">'+(subs.length?'<span class="chev '+(exp?'open':'')+'" data-tog="'+m.id+'">'+ic('chev')+'</span>':'')+'</td>';
    h+='<td><span class="tag">'+m.id+'</span></td>';
    h+='<td><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><strong>'+m.name+'</strong><button class="btn bsm bg0 asb" data-addsub="'+m.id+'">'+ic('plus')+' Sub</button><button class="btn bsm bg0" data-editacc="'+m.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-delacc="'+m.id+'">'+ic('del')+'</button></div>'+rl(m.id)+'</td>';
@@ -3595,12 +3689,27 @@ function pCOA(){
    h+='<td class="tr mn" style="font-weight:700">'+N(mbal)+'</td>';
    h+='</tr>';
    if(exp){subs.forEach(function(s){
-    h+='<tr><td></td><td><span class="tag" style="color:var(--pu)">'+s.id+'</span></td>';
+    // A sub-account can itself have children — this is how the auto-
+    // generated customer/supplier sub-ledger accounts (e.g. "1103-01-001",
+    // under "Local Customers" 1103-01) are nested and made visible here;
+    // see autoCreateContactAccount(). Undefined defaults to expanded so
+    // they show up immediately without an extra click.
+    var subs2=db.accounts.filter(function(x){return x.pid===s.id;});
+    var exp2=db.exp[s.id]!==false;
+    h+='<tr><td style="text-align:center">'+(subs2.length?'<span class="chev '+(exp2?'open':'')+'" data-tog="'+s.id+'">'+ic('chev')+'</span>':'')+'</td><td><span class="tag" style="color:var(--pu)">'+s.id+'</span></td>';
     h+='<td style="padding-left:26px"><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="color:var(--t3)">&#x2514;</span>'+accN(s)+'<button class="btn bsm bg0" data-editacc="'+s.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-delacc="'+s.id+'">'+ic('del')+'</button></div>'+rl(s.id)+'</td>';
     h+='<td><span class="b bpu" style="font-size:10px">Sub</span></td>';
     h+='<td><span class="b '+(s.normal==='Debit'?'bbl':'bgn')+'">'+s.normal+'</span></td>';
-    h+='<td class="tr mn">'+N(s.bal)+'</td>';
+    h+='<td class="tr mn">'+N(acctRollupBal(s))+'</td>';
     h+='</tr>';
+    if(exp2){subs2.forEach(function(g){
+     h+='<tr><td></td><td><span class="tag" style="color:var(--t3)">'+g.id+'</span></td>';
+     h+='<td style="padding-left:44px"><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="color:var(--t3)">&#x2514;</span>'+accN(g)+(g.autoGen?' <span class="b" style="font-size:9px;opacity:.7">'+(lang==='ar'?'تلقائي':'auto')+'</span>':'')+'<button class="btn bsm bg0" data-editacc="'+g.id+'">'+ic('edit')+'</button><button class="btn bsm bg0 bdr" data-delacc="'+g.id+'">'+ic('del')+'</button></div>'+rl(g.id)+'</td>';
+     h+='<td><span class="b" style="font-size:10px">Sub</span></td>';
+     h+='<td><span class="b '+(g.normal==='Debit'?'bbl':'bgn')+'">'+g.normal+'</span></td>';
+     h+='<td class="tr mn">'+N(g.bal)+'</td>';
+     h+='</tr>';
+    });}
    });}
   });
   stand.forEach(function(a){
@@ -4015,6 +4124,18 @@ function mainBalRange(mainId,from2,to2){
  if(!subs.length)return accBalRange(mainId,from2,to2);
  return subs.reduce(function(s,x){return s+accBalRange(x.id,from2,to2);},0);
 }
+// Like acctRollupBal() but date-range aware (for Trial Balance): an account
+// with no children is computed directly from its postings via
+// accBalRange(); a parent (e.g. "Local Customers" 1103-01, once individual
+// customer sub-accounts exist under it -- see autoCreateContactAccount())
+// sums its children's rolled-up balances instead, at any depth. This is
+// what keeps Trial Balance totals correct once postings move from a
+// 2-level sub-account onto its own auto-generated 3rd-level children.
+function accBalRangeRollup(accId,from2,to2){
+ var kids=db.accounts.filter(function(c){return c.pid===accId;});
+ if(!kids.length)return accBalRange(accId,from2,to2);
+ return kids.reduce(function(s,k){return s+accBalRangeRollup(k.id,from2,to2);},0);
+}
 
 function updatePITotals(){
  var sub=0,vat=0;
@@ -4095,30 +4216,43 @@ function pTrial(){
   h+='<div style="text-align:center;padding:60px 20px;color:var(--t3)"><div style="font-size:48px;margin-bottom:12px">📊</div><div style="font-size:14px;font-weight:600;color:var(--t2)">'+(isAr?'اضغط "عرض التقرير" لعرض ميزان المراجعة':'Click "Show Report" to display Trial Balance')+'</div></div>';
   h+='</div>';return h;
  }
- var types=['Asset','Liability','Equity','Revenue','Expense'],rows=[],drTotal=0,crTotal=0;
+ var types=['Asset','Liability','Equity','Revenue','Expense'],rows=[];
  types.forEach(function(tp){
   db.accounts.filter(function(a){return a.type===tp&&a.isMain;}).forEach(function(m){
-   var subs=db.accounts.filter(function(s){return s.pid===m.id;});
-   var mBal=mainBalRange(m.id,f,t);
-   if(lv!=='sub')rows.push({id:m.id,name:m.name,nameAr:m.nameAr||'',type:tp,normal:m.normal,bal:mBal,isMain:true});
+   var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
+   var mBal=accBalRangeRollup(m.id,f,t);
+   if(lv!=='sub')rows.push({id:m.id,name:m.name,nameAr:m.nameAr||'',type:tp,normal:m.normal,bal:mBal,isMain:true,lvl:0});
    subs.forEach(function(s){
-    var sBal=accBalRange(s.id,f,t);
-    if(lv!=='main')rows.push({id:s.id,name:s.name,nameAr:s.nameAr||'',type:tp,normal:s.normal,bal:sBal,isMain:false,pid:m.id});
-    // Add to totals based on actual sign
-    if(s.normal==='Debit'){if(sBal>=0)drTotal+=sBal;else crTotal+=Math.abs(sBal);}
-    else{if(sBal>=0)crTotal+=sBal;else drTotal+=Math.abs(sBal);}
+    // A sub-account can itself have children now (e.g. "Local Customers"
+    // 1103-01, once individual customer sub-accounts exist under it -- see
+    // autoCreateContactAccount()); postings land on those, not on s itself,
+    // so s's displayed balance here is the rolled-up sum of its children.
+    var subSubs=db.accounts.filter(function(ss){return ss.pid===s.id;});
+    var sBal=accBalRangeRollup(s.id,f,t);
+    if(lv!=='main')rows.push({id:s.id,name:s.name,nameAr:s.nameAr||'',type:tp,normal:s.normal,bal:sBal,isMain:false,pid:m.id,lvl:1});
+    subSubs.forEach(function(ss){
+     var ssBal=accBalRange(ss.id,f,t);
+     if(lv!=='main')rows.push({id:ss.id,name:ss.name,nameAr:ss.nameAr||'',type:tp,normal:ss.normal,bal:ssBal,isMain:false,pid:s.id,lvl:2});
+    });
    });
-   if(!subs.length){
-    if(m.normal==='Debit'){if(mBal>=0)drTotal+=mBal;else crTotal+=Math.abs(mBal);}
-    else{if(mBal>=0)crTotal+=mBal;else drTotal+=Math.abs(mBal);}
-   }
   });
   db.accounts.filter(function(a){return a.type===tp&&!a.isMain&&!a.pid;}).forEach(function(a){
    var aBal=accBalRange(a.id,f,t);
-   rows.push({id:a.id,name:a.name,nameAr:a.nameAr||'',type:tp,normal:a.normal,bal:aBal,isMain:false});
-   if(a.normal==='Debit'){if(aBal>=0)drTotal+=aBal;else crTotal+=Math.abs(aBal);}
-   else{if(aBal>=0)crTotal+=aBal;else drTotal+=Math.abs(aBal);}
+   rows.push({id:a.id,name:a.name,nameAr:a.nameAr||'',type:tp,normal:a.normal,bal:aBal,isMain:false,lvl:0});
   });
+ });
+ // Totals: one flat pass over every non-main account's OWN balance (never
+ // a rollup) -- this is what keeps the total correct and dedup-safe
+ // regardless of nesting depth or of the handful of legacy COA entries
+ // that carry BOTH isMain:true and a pid (e.g. "4101", "5101"), which are
+ // otherwise reachable via two different Main->Sub traversal paths in the
+ // rows loop above and would double-count if totals were accumulated
+ // there instead. Every leaf account is visited exactly once here.
+ var drTotal=0,crTotal=0;
+ db.accounts.filter(function(a){return !a.isMain;}).forEach(function(a){
+  var bal=accBalRange(a.id,f,t);
+  if(a.normal==='Debit'){if(bal>=0)drTotal+=bal;else crTotal+=Math.abs(bal);}
+  else{if(bal>=0)crTotal+=bal;else drTotal+=Math.abs(bal);}
  });
  var dr=drTotal,cr=crTotal;
  var ok=Math.abs(dr-cr)<0.01;
@@ -4138,7 +4272,7 @@ function pTrial(){
   if(r.normal==='Debit'){if(r.bal>=0){dr2=r.bal;cr2=0;}else{dr2=0;cr2=Math.abs(r.bal);}}
   else{if(r.bal>=0){dr2=0;cr2=r.bal;}else{dr2=Math.abs(r.bal);cr2=0;}}
   var rowBg=r.isMain?'background:var(--bg)':'';
-  var indent=r.pid?'padding-right:20px':'';
+  var indent=(r.lvl||0)?'padding-right:'+((r.lvl||0)*20)+'px':'';
   var nameDisplay=rptShowCodes?(r.id+' '):'';
   h+='<tr style="'+rowBg+'">'
    +'<td><span class="tag">'+r.id+'</span></td>'
@@ -4177,7 +4311,7 @@ function pIncome(){
  h+='<div class="mets"><div class="met"><div class="mlab">Revenue</div><div class="mv">'+fmt(d.rev)+'</div></div><div class="met"><div class="mlab">Gross Profit</div><div class="mv '+(d.gp>=0?'pos':'neg')+'">'+fmt(d.gp)+'</div></div><div class="met"><div class="mlab">Net Income</div><div class="mv '+(d.ni>=0?'pos':'neg')+'">'+fmt(d.ni)+'</div></div></div>';
  h+='<div class="card" style="max-width:560px"><div class="rh">Revenue</div>';
  db.accounts.filter(function(a){return a.type==='Revenue'&&a.isMain;}).forEach(function(m){
-  var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+  var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
   var bal=subs.reduce(function(s,x){return s+accBalRange(x.id,f,t);},0);
   if(!subs.length)bal=accBalRange(m.id,f,t);
   var mCode=rptShowCodes?'<span class="tag" style="font-size:10px;margin-inline-end:4px">'+m.id+'</span>':'';
@@ -4193,7 +4327,7 @@ function pIncome(){
  h+='<div class="rt"><span>Gross Profit</span><span class="mn">'+N(d.gp)+'</span></div>';
  h+='<div class="rh">Operating Expenses</div>';
  db.accounts.filter(function(a){return a.type==='Expense'&&a.isMain&&a.id!=='5000';}).forEach(function(m){
-  var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+  var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
   var bal=subs.reduce(function(s,x){return s+accBalRange(x.id,f,t);},0);
   if(!subs.length)bal=accBalRange(m.id,f,t);
   var mCode=rptShowCodes?'<span class="tag" style="font-size:10px;margin-inline-end:4px">'+m.id+'</span>':'';
@@ -6116,6 +6250,18 @@ function mContact(){
   if(curA)curAccName=curA.id+' | '+curA.name+(curA.nameAr?' | '+curA.nameAr:'');
  }
  body+=accDL;
+ // For a brand-new contact, leaving this blank auto-generates a dedicated
+ // sub-ledger account under Local/Foreign Customers or Suppliers (see
+ // autoCreateContactAccount(), called from mSaveContact) -- so the search
+ // field is now optional (an override) rather than required. When editing
+ // an existing contact the field still shows/lets you change the current
+ // link as before.
+ var autoHint=(!c.editId)
+  ?('<div style="font-size:11px;color:var(--t2);margin-top:4px">\u{1F522} '
+   +(isAr?'\u0627\u062a\u0631\u0643\u0647 \u0641\u0627\u0631\u063a\u064b\u0627 \u0644\u0625\u0646\u0634\u0627\u0621 \u0631\u0642\u0645 \u062d\u0633\u0627\u0628 \u0641\u0631\u0639\u064a \u062a\u0644\u0642\u0627\u0626\u064a\u064b\u0627 \u062a\u062d\u062a '+(isSup?'\u0627\u0644\u0645\u0648\u0631\u062f\u0648\u0646':'\u0627\u0644\u0639\u0645\u0644\u0627\u0621')+' - \u0645\u062d\u0644\u064a\u0648\u0646 / \u062e\u0627\u0631\u062c\u064a\u0648\u0646 \u062d\u0633\u0628 \u0627\u0644\u062f\u0648\u0644\u0629 \u0627\u0644\u0645\u062e\u062a\u0627\u0631\u0629.'
+   :'Leave blank to auto-generate a sub-ledger account under Local/Foreign '+(isSup?'Suppliers':'Customers')+' based on the selected country.')
+   +'</div>')
+  :'';
  body+=fld(
   (isAr?'\u0627\u0628\u062d\u062b \u0639\u0646 \u0627\u0644\u062d\u0633\u0627\u0628 '+(isSup?'(\u0630\u0645\u0645 \u062f\u0627\u0626\u0646\u0629)':'(\u0630\u0645\u0645 \u0645\u062f\u064a\u0646\u0629)'):'Search Account '+(isSup?'(Payable)':'(Receivable)')),
   '<input id="c-acc-search" list="cAccDL" value="'+curAccName+'" autocomplete="off"'
@@ -6123,6 +6269,7 @@ function mContact(){
   +' style="'+inp+'">'
   +'<input type="hidden" id="c-acc" value="'+(c.linkedAccId||'')+'"><div id="c-acc-info" style="font-size:11px;color:var(--t2);margin-top:4px">'
   +(c.linkedAccId&&curAccName?'✅ '+curAccName:'')+'</div>'
+  +autoHint
  );
  return wrap((c.editId?'Edit ':'New ')+(isSup?(isAr?'\u0645\u0648\u0631\u062f':'Supplier'):(isAr?'\u0639\u0645\u064a\u0644':'Customer')),body,'mSaveContact',(isAr?'\u062d\u0641\u0638':'Save'));
 }
@@ -6436,7 +6583,7 @@ window.xAction=function(type){
   var types=['Asset','Liability','Equity','Revenue','Expense'];
   types.forEach(function(t){
    db.accounts.filter(function(a){return a.type===t&&a.isMain&&!a.pid;}).forEach(function(m){
-    var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+    var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
     var bal=subs.length?subs.reduce(function(s,x){return s+x.bal;},0):m.bal;
     coaRows.push({id:m.id,name:m.name,nameAr:m.nameAr||'',type:t,level:'Main',normal:m.normal,bal:bal,indent:0,isMain:true});
     subs.forEach(function(s){
@@ -6514,37 +6661,75 @@ window.xAction=function(type){
   printHTML('Journal Entries',html);
   return;
  } else if(type==='pdfTrial'){
-  var types=['Asset','Liability','Equity','Revenue','Expense'],dr=0,cr=0;
+  var types=['Asset','Liability','Equity','Revenue','Expense'];
   var html='<table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th class="tr">Debit</th><th class="tr">Credit</th></tr></thead><tbody>';
-  types.forEach(function(t){db.accounts.filter(function(a){return a.type===t&&a.isMain;}).forEach(function(m){var subs=db.accounts.filter(function(s){return s.pid===m.id;});html+='<tr class="tot"><td>'+m.id+'</td><td><strong>'+m.name+'</strong></td><td>'+t+'</td><td></td><td></td></tr>';subs.forEach(function(s){html+='<tr><td>'+s.id+'</td><td style="padding-left:14pt">'+s.name+'</td><td>'+t+'</td><td class="tr">'+(s.normal==='Debit'?N(s.bal):'')+'</td><td class="tr">'+(s.normal==='Credit'?N(s.bal):'')+'</td></tr>';if(s.normal==='Debit')dr+=s.bal;else cr+=s.bal;});});});
+  types.forEach(function(t){db.accounts.filter(function(a){return a.type===t&&a.isMain;}).forEach(function(m){
+   var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
+   html+='<tr class="tot"><td>'+m.id+'</td><td><strong>'+m.name+'</strong></td><td>'+t+'</td><td></td><td></td></tr>';
+   subs.forEach(function(s){
+    // A sub can itself have children now (e.g. auto-generated customer/
+    // supplier sub-accounts under "Local Customers" -- see
+    // autoCreateContactAccount()); roll its displayed balance up from them
+    // (totals themselves come from a separate flat pass below, not here).
+    var subSubs=db.accounts.filter(function(ss){return ss.pid===s.id;});
+    var sBal=subSubs.length?subSubs.reduce(function(x,y){return x+acctRollupBal(y);},0):s.bal;
+    html+='<tr><td>'+s.id+'</td><td style="padding-left:14pt">'+s.name+'</td><td>'+t+'</td><td class="tr">'+(s.normal==='Debit'?N(sBal):'')+'</td><td class="tr">'+(s.normal==='Credit'?N(sBal):'')+'</td></tr>';
+    subSubs.forEach(function(ss){
+     html+='<tr><td>'+ss.id+'</td><td style="padding-left:28pt">'+ss.name+'</td><td>'+t+'</td><td class="tr">'+(ss.normal==='Debit'?N(ss.bal):'')+'</td><td class="tr">'+(ss.normal==='Credit'?N(ss.bal):'')+'</td></tr>';
+    });
+   });
+  });});
+  // Totals: one flat, dedup-safe pass over every non-main account's own
+  // .bal -- see the matching comment in pTrial() for why (a handful of
+  // legacy COA entries carry both isMain:true and a pid, e.g. "4101", and
+  // would double-count if totalled inside the nested loop above instead).
+  var dr=0,cr=0;
+  db.accounts.filter(function(a){return !a.isMain;}).forEach(function(a){
+   if(a.normal==='Debit')dr+=a.bal||0;else cr+=a.bal||0;
+  });
   html+='<tr class="fin"><td colspan="3">TOTAL</td><td class="tr">'+N(dr)+'</td><td class="tr">'+N(cr)+'</td></tr></tbody></table>';
   printHTML('Trial Balance',html);
  } else if(type==='xlsTrial'){
   var f=rptFrom,t2=rptTo;
-  var types=['Asset','Liability','Equity','Revenue','Expense'],rows=[],dr=0,cr=0;
+  var types=['Asset','Liability','Equity','Revenue','Expense'],rows=[];
   types.forEach(function(tp){
    db.accounts.filter(function(a){return a.type===tp&&a.isMain;}).forEach(function(m){
-    var subs=db.accounts.filter(function(s){return s.pid===m.id;});
-    var mBal=mainBalRange(m.id,f,t2);
+    var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
+    var mBal=accBalRangeRollup(m.id,f,t2);
     rows.push([m.id,m.name,tp,'','']);
     subs.forEach(function(s){
-     var sBal=accBalRange(s.id,f,t2);
+     // See the pdfTrial branch above for why this rolls up through any
+     // children rather than reading s's own (possibly unused) balance,
+     // and why totals themselves come from a separate flat pass below.
+     var subSubs=db.accounts.filter(function(ss){return ss.pid===s.id;});
+     var sBal=accBalRangeRollup(s.id,f,t2);
      var dr2,cr2;
      if(s.normal==='Debit'){if(sBal>=0){dr2=sBal;cr2='';}else{dr2='';cr2=Math.abs(sBal);}}
      else{if(sBal>=0){dr2='';cr2=sBal;}else{dr2=Math.abs(sBal);cr2='';}}
-     rows.push([s.id,s.name,tp,dr2,cr2]);
-     if(s.normal==='Debit'){if(sBal>=0)dr+=sBal;else cr+=Math.abs(sBal);}
-     else{if(sBal>=0)cr+=sBal;else dr+=Math.abs(sBal);}
+     rows.push([s.id,'  '+s.name,tp,dr2,cr2]);
+     subSubs.forEach(function(ss){
+      var ssBal=accBalRange(ss.id,f,t2);
+      var dr3,cr3;
+      if(ss.normal==='Debit'){if(ssBal>=0){dr3=ssBal;cr3='';}else{dr3='';cr3=Math.abs(ssBal);}}
+      else{if(ssBal>=0){dr3='';cr3=ssBal;}else{dr3=Math.abs(ssBal);cr3='';}}
+      rows.push([ss.id,'    '+ss.name,tp,dr3,cr3]);
+     });
     });
     if(!subs.length){
      var dr2,cr2;
      if(m.normal==='Debit'){if(mBal>=0){dr2=mBal;cr2='';}else{dr2='';cr2=Math.abs(mBal);}}
      else{if(mBal>=0){dr2='';cr2=mBal;}else{dr2=Math.abs(mBal);cr2='';}}
      rows[rows.length-1][3]=dr2;rows[rows.length-1][4]=cr2;
-     if(m.normal==='Debit'){if(mBal>=0)dr+=mBal;else cr+=Math.abs(mBal);}
-     else{if(mBal>=0)cr+=mBal;else dr+=Math.abs(mBal);}
     }
    });
+  });
+  // Totals: same flat, dedup-safe pass as pTrial()/pdfTrial() above, using
+  // the date-ranged accBalRange() (this export respects rptFrom/rptTo).
+  var dr=0,cr=0;
+  db.accounts.filter(function(a){return !a.isMain;}).forEach(function(a){
+   var bal=accBalRange(a.id,f,t2);
+   if(a.normal==='Debit'){if(bal>=0)dr+=bal;else cr+=Math.abs(bal);}
+   else{if(bal>=0)cr+=bal;else dr+=Math.abs(bal);}
   });
   exportXLS([[db.company.name],[db.company.address||''],[tr('nav_trial'),'','Date: '+today()],[],['Code','Account','Type','Debit','Credit']].concat(rows).concat([['','TOTAL','',dr,cr]]),'Trial Balance','Trial_Balance_'+today());
  } else if(type==='xlsIncome'){
@@ -6553,7 +6738,7 @@ window.xAction=function(type){
   var aoa=[[db.company.name],[db.company.address||''],[tr('nav_income'),'Date: '+today()],[],['','']];
   aoa.push(['REVENUE','','']);
   db.accounts.filter(function(a){return a.type==='Revenue'&&a.isMain;}).forEach(function(m){
-   var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+   var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
    var bal=subs.length?subs.reduce(function(s,x){return s+accBalRange(x.id,f,t2);},0):accBalRange(m.id,f,t2);
    aoa.push([m.id,m.name,bal]);
    subs.forEach(function(s){aoa.push([s.id,'  '+accN(s),accBalRange(s.id,f,t2)]);});
@@ -6566,7 +6751,7 @@ window.xAction=function(type){
   aoa.push(['']);
   aoa.push(['OPERATING EXPENSES','']);
   db.accounts.filter(function(a){return a.type==='Expense'&&a.isMain&&a.id!=='5000';}).forEach(function(m){
-   var subs=db.accounts.filter(function(s){return s.pid===m.id;});
+   var subs=db.accounts.filter(function(s){return s.pid===m.id&&!s.isMain;});
    var bal=subs.length?subs.reduce(function(s,x){return s+accBalRange(x.id,f,t2);},0):accBalRange(m.id,f,t2);
    aoa.push([m.name,bal]);
    subs.forEach(function(s){aoa.push(['  '+accN(s),accBalRange(s.id,f,t2)]);});
@@ -7825,8 +8010,29 @@ function bindEvents(){
    linkedAccId:(document.getElementById('c-acc')||{}).value||''
   };
   var arr=isSup?db.suppliers:db.customers,t=isSup?tSup:tCus;
-  if(t.editId){var obj=arr.find(function(x){return x.id===t.editId;});if(obj){Object.assign(obj,data);if(isSup&&supView&&supView.id===t.editId)supView=obj;else if(!isSup&&cusView&&cusView.id===t.editId)cusView=obj;}}
-  else{var nid=isSup?nextSUP():nextCUS();arr.push(Object.assign({id:nid},data));}
+  if(t.editId){
+   var obj=arr.find(function(x){return x.id===t.editId;});
+   if(obj){
+    Object.assign(obj,data);
+    // Keep an auto-generated sub-ledger account's name in sync with the
+    // contact's own name; a manually-linked account is left untouched.
+    if(obj.linkedAccId){
+     var linkedAcc=db.accounts.find(function(a){return a.id===obj.linkedAccId;});
+     if(linkedAcc&&linkedAcc.autoGen){linkedAcc.name=obj.name;linkedAcc.nameAr=obj.nameAr||'';}
+    }
+    if(isSup&&supView&&supView.id===t.editId)supView=obj;else if(!isSup&&cusView&&cusView.id===t.editId)cusView=obj;
+   }
+  } else {
+   var nid=isSup?nextSUP():nextCUS();
+   var newContact=Object.assign({id:nid},data);
+   // Auto-generate a dedicated sub-ledger account under Local/Foreign
+   // Customers or Suppliers when the user didn't manually pick one.
+   if(!newContact.linkedAccId){
+    var autoId=autoCreateContactAccount(db.accounts,isSup,newContact);
+    if(autoId)newContact.linkedAccId=autoId;
+   }
+   arr.push(newContact);
+  }
   modal=null;save();render();
  });
  // Settings
