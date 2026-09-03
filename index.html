@@ -336,6 +336,17 @@ function normalizeDB(d){
  });
  if(!d.users)d.users=[];
  if(d.company.vatRate===undefined)d.company.vatRate=15;
+ // Self-heal a company stamp/signature that ended up as an unusable data
+ // URI (e.g. from the 0px-canvas edge case fixed in wireImageUploadField)
+ // -- it would otherwise sit there forever as a "truthy but invisible"
+ // value, silently failing to render on the Balance Confirmation Letter
+ // and everywhere else it's used, with no way for the user to tell it's
+ // broken versus just not-yet-uploaded. Clearing it here just reverts to
+ // the normal "no stamp/signature uploaded" state so it can be re-uploaded.
+ ['stamp','signature','logo'].forEach(function(f){
+  var v=d.company[f];
+  if(v&&!/^data:image\/[a-z0-9+.-]+;base64,.{20,}$/i.test(v))d.company[f]='';
+ });
  d.accounts.filter(function(a){return a.isMain;}).forEach(function(a){if(d.exp[a.id]===undefined)d.exp[a.id]=true;});
  // Backfill: any customer/supplier that does not have its OWN dedicated
  // sub-ledger account yet gets one auto-generated -- see
@@ -611,6 +622,14 @@ function wireImageUploadField(inputId,dbField,maxW,maxH){
     var w=img.width,h=img.height;
     if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
     if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
+    // Guard against a degenerate 0px canvas: an extreme-aspect-ratio source
+    // image (very wide-and-short, or tall-and-narrow) can round one side
+    // down to 0 here, which used to produce a technically non-empty but
+    // completely unusable/invisible data URI -- the stored image would
+    // then silently fail to render everywhere it's used (Settings preview,
+    // the Balance Confirmation Letter, etc.) with no visible sign why.
+    if(w<1)w=1;
+    if(h<1)h=1;
     var canvas=document.createElement('canvas');
     canvas.width=w;canvas.height=h;
     var ctx=canvas.getContext('2d');
@@ -685,8 +704,22 @@ var CONFIRM_LETTER_TITLE='خطاب مطابقة رصيد حساب / Account Bala
 // fixed template's own wording (it states a single balance figure), so it
 // isn't shown here — accBalanceEffective() below is kept in case a future
 // tweak wants to reintroduce it.
+//
+// IMPORTANT: this deliberately does NOT read acc.bal directly. The live
+// Purchase/Sales Invoice posting flow (the actual "Post" button — see the
+// action==='post' branch in xAction) only ever pushes a journal entry; it
+// never updates the account's own .bal field (only a couple of long-dead,
+// unreachable code paths and fixed-asset depreciation still do that). So
+// for a customer/supplier's linked account, acc.bal can sit at 0 forever
+// while real invoice activity has already posted through db.journals --
+// exactly what made this letter show 0.00 for a supplier who clearly had
+// a live balance on the Account Statement screen. accBalRange(acc.id)
+// (same engine used by Account Statement / Trial Balance) starts from
+// acc.bal and replays every journals/receipts/payments line for that
+// account with no date bound, so it reflects the true balance as of today
+// regardless of which posting path (synced or not) created it.
 function accBalanceEffective(acc){
- var bal=acc.bal||0;
+ var bal=accBalRange(acc.id);
  var effSide=acc.normal==='Debit'?(bal>=0?'Debit':'Credit'):(bal>=0?'Credit':'Debit');
  return {side:effSide,amount:Math.abs(bal)};
 }
@@ -724,8 +757,16 @@ function confirmLetterBodyHtml(contact,acc){
  // (see pSettings()'s Company Stamp / Financial Manager Signature cards),
  // otherwise fall back to a blank line for a physical signature.
  var blank='.....................................';
- var sigImg=co.signature?'<img src="'+co.signature+'" style="height:26px;max-width:75px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
- var stampImg=co.stamp?'<img src="'+co.stamp+'" style="height:34px;max-width:55px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
+ // onerror fallback: if the stored image ever turns out to be an unusable
+ // data URI (e.g. an extreme-aspect-ratio upload rounded down to a 0px
+ // canvas dimension before this was guarded against below — see
+ // wireImageUploadField), the <img> would otherwise render as nothing at
+ // all, with no visible sign anything is even meant to be there. Falling
+ // back to the same dotted blank line here keeps the letter presentable in
+ // any browser-rendered context (on-screen preview, the Print/PDF popup);
+ // it has no effect in the Word export, which isn't a live script context.
+ var sigImg=co.signature?'<span><img src="'+co.signature+'" style="height:26px;max-width:75px;object-fit:contain;display:inline-block;vertical-align:middle" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline\'"><span style="display:none">'+blank+'</span></span>':blank;
+ var stampImg=co.stamp?'<span><img src="'+co.stamp+'" style="height:34px;max-width:55px;object-fit:contain;display:inline-block;vertical-align:middle" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline\'"><span style="display:none">'+blank+'</span></span>':blank;
  var balEn=eff.side==='Credit'
   ?'Please be informed that your <u>credit</u> balance with us amounts to <strong>'+curCode+' '+amountFmt+'</strong>.'
   :'Please be informed that your <u>debit</u> balance with us amounts to <strong>'+curCode+' '+amountFmt+'</strong>.';
