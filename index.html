@@ -596,9 +596,19 @@ function accBalanceEffective(acc){
  var effSide=acc.normal==='Debit'?(bal>=0?'Debit':'Credit'):(bal>=0?'Credit':'Debit');
  return {side:effSide,amount:Math.abs(bal)};
 }
+// Compact single-page bilingual template (approved design, Sep 2026):
+// every field that can be merged onto one line is merged, and the
+// recipient's acknowledgment section is a compact 2-column table instead
+// of two long stacked blocks — this is what keeps the whole letter on one
+// printed page. The balance sentence is debit/credit-AWARE: it reads
+// "your credit balance with us" or "your debit balance with us" (and the
+// matching Arabic "رصيدكم الدائن لدينا" / "رصيدكم المدين لدينا")
+// depending on accBalanceEffective(acc).side, so it always describes the
+// account's actual current nature rather than a fixed direction.
 function confirmLetterBodyHtml(contact,acc){
  var co=db.company;
- var amount=accBalanceEffective(acc).amount;
+ var eff=accBalanceEffective(acc);
+ var amount=eff.amount;
  var d=new Date();
  var dateStr=String(d.getDate()).padStart(2,'0')+' / '+String(d.getMonth()+1).padStart(2,'0')+' / '+d.getFullYear();
  var nameEn=contact.name||contact.id;
@@ -608,68 +618,64 @@ function confirmLetterBodyHtml(contact,acc){
  var amountFmt=N(amount);
  var LTR='direction:ltr;text-align:left';
  var RTL='direction:rtl;text-align:right';
- var tdEn='style="'+LTR+';padding:9pt 10pt;border:1pt solid #ccc;vertical-align:top"';
- var tdAr='style="'+RTL+';padding:9pt 10pt;border:1pt solid #ccc;vertical-align:top"';
- function row(en,ar){return '<tr><td '+tdEn+'>'+en+'</td><td '+tdAr+'>'+ar+'</td></tr>';}
+ var cellBase='padding:6pt 8pt;border:0.75pt solid #ccc;vertical-align:top';
+ // bg (optional) highlights a row — used for the debit/credit balance line.
+ function row(en,ar,bg){
+  var extra=bg?';background:'+bg:'';
+  return '<tr><td style="'+LTR+';'+cellBase+extra+'">'+en+'</td><td style="'+RTL+';'+cellBase+extra+'">'+ar+'</td></tr>';
+ }
  // Our own company's sign-off — Company name and (a default) Title are
  // things we actually know; the signer's personal Name is left blank for
  // manual entry, and Signature/Stamp embed the uploaded images when present
  // (see pSettings()'s Company Stamp / Financial Manager Signature cards),
  // otherwise fall back to a blank line for a physical signature.
- var blank='...............................................';
- var sigImg=co.signature?'<img src="'+co.signature+'" style="height:44px;max-width:150px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
- var stampImg=co.stamp?'<img src="'+co.stamp+'" style="height:70px;max-width:110px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
- var titleBlock='<div style="text-align:center;margin-bottom:16pt">'
-  +'<div style="font-size:15pt;font-weight:800;color:#0D3B6E">خطاب مطابقة رصيد حساب</div>'
-  +'<div style="font-size:13pt;font-weight:800;color:#0D3B6E;margin-top:2pt">ACCOUNT BALANCE CONFIRMATION LETTER</div>'
+ var blank='.....................................';
+ var sigImg=co.signature?'<img src="'+co.signature+'" style="height:26px;max-width:75px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
+ var stampImg=co.stamp?'<img src="'+co.stamp+'" style="height:34px;max-width:55px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
+ var balEn=eff.side==='Credit'
+  ?'Please be informed that your <u>credit</u> balance with us amounts to <strong>'+curCode+' '+amountFmt+'</strong>.'
+  :'Please be informed that your <u>debit</u> balance with us amounts to <strong>'+curCode+' '+amountFmt+'</strong>.';
+ var balAr=eff.side==='Credit'
+  ?'نفيدكم بأن رصيدكم <u>الدائن</u> لدينا يبلغ <strong>'+amountFmt+' '+curArLabel+'</strong>.'
+  :'نفيدكم بأن رصيدكم <u>المدين</u> لدينا يبلغ <strong>'+amountFmt+' '+curArLabel+'</strong>.';
+ var titleBlock='<div style="text-align:center;margin-bottom:8pt">'
+  +'<div style="font-size:13pt;font-weight:800;color:#0D3B6E">خطاب مطابقة رصيد حساب &nbsp;/&nbsp; ACCOUNT BALANCE CONFIRMATION LETTER</div>'
   +'</div>';
- var table='<table style="width:100%;border-collapse:collapse;margin-bottom:18pt;font-size:10.5pt;line-height:1.7">'
-  +'<tr><th style="width:50%;background:#0D3B6E;color:#fff;padding:8pt 10pt;'+LTR+'">English – Left Side</th>'
-  +'<th style="width:50%;background:#0D3B6E;color:#fff;padding:8pt 10pt;'+RTL+'">العربية – Right Side</th></tr>'
-  +row('<strong>Date:</strong> '+dateStr,'<strong>التاريخ:</strong> '+dateStr)
-  +row('<strong>Dear Sirs,</strong><br>'+nameEn,'<strong>السادة/ '+nameAr+' المحترمين،</strong>')
-  +row('Greetings,','تحية طيبة وبعد،')
+ var table='<table style="width:100%;border-collapse:collapse;margin-bottom:8pt;font-size:9.5pt;line-height:1.35">'
+  +'<tr><th style="width:50%;background:#0D3B6E;color:#fff;padding:5pt 8pt;font-size:8.5pt;'+LTR+'">English – Left Side</th>'
+  +'<th style="width:50%;background:#0D3B6E;color:#fff;padding:5pt 8pt;font-size:8.5pt;'+RTL+'">العربية – Right Side</th></tr>'
+  +row('<strong>Date:</strong> '+dateStr+' &nbsp;&nbsp; <strong>Dear Sirs,</strong> '+nameEn,
+       '<strong>التاريخ:</strong> '+dateStr+' &nbsp;&nbsp; <strong>السادة/</strong> '+nameAr+' المحترمين،')
   +row(
-   'We kindly request you to review, reconcile and confirm your account balance with our company as of <strong>'+dateStr+'</strong>, according to our accounting records and the attached statement of account. In case of any discrepancy or comments, please provide us with the relevant details to enable us to complete the reconciliation between both parties’ records.',
-   'نرجو منكم التكرم بمراجعة ومطابقة وتأكيد رصيد حسابكم لدى شركتنا كما هو في تاريخ <strong>'+dateStr+'</strong>، وفقًا لسجلاتنا المحاسبية وكشف الحساب المرفق. وفي حال وجود أي فروقات أو ملاحظات، يرجى تزويدنا بتفاصيلها، وذلك لاستكمال إجراءات المطابقة بين سجلات الطرفين.'
+   'Greetings, we kindly request you to review, reconcile and confirm your account balance with our company as of <strong>'+dateStr+'</strong>, according to our accounting records and the attached statement of account. In case of any discrepancy, please provide us with the relevant details to complete the reconciliation.',
+   'تحية طيبة وبعد، نرجو منكم التكرم بمراجعة ومطابقة وتأكيد رصيد حسابكم لدى شركتنا كما هو في تاريخ <strong>'+dateStr+'</strong>، وفقًا لسجلاتنا المحاسبية وكشف الحساب المرفق. وفي حال وجود أي فروقات، يرجى تزويدنا بتفاصيلها لاستكمال المطابقة.'
   )
-  +row('<strong>Balance as per our records: '+curCode+' '+amountFmt+'</strong>','<strong>الرصيد حسب سجلاتنا: '+amountFmt+' '+curArLabel+'</strong>')
-  +row('Kindly sign and stamp below and return this letter to us as confirmation of the balance.','يرجى التكرم بالتوقيع والختم أدناه وإعادة الخطاب إلينا تأكيدًا لمطابقة الرصيد.')
-  +row('<strong>Yours faithfully,</strong>','<strong>وتفضلوا بقبول فائق الاحترام والتقدير،</strong>')
-  +row('<strong>Company:</strong> '+(co.name||''),'<strong>الشركة:</strong> '+(co.name||''))
-  +row('<strong>Name:</strong> '+blank,'<strong>الاسم:</strong> '+blank)
-  +row('<strong>Title:</strong> Financial Manager','<strong>المسمى الوظيفي:</strong> المدير المالي')
-  +row('<strong>Signature:</strong> '+sigImg,'<strong>التوقيع:</strong> '+sigImg)
-  +row('<strong>Company Stamp:</strong> '+stampImg,'<strong>ختم الشركة:</strong> '+stampImg)
+  +row(balEn,balAr,'#f4f8fc')
+  +row('Kindly sign and stamp below and return this letter to us as confirmation of the balance.<br><strong>Yours faithfully,</strong> '+(co.name||''),
+       'يرجى التكرم بالتوقيع والختم أدناه وإعادة الخطاب إلينا تأكيدًا لمطابقة الرصيد.<br><strong>وتفضلوا بقبول فائق الاحترام والتقدير،</strong> '+(co.name||''))
+  +row('<strong>Name:</strong> '+blank+' &nbsp;&nbsp; <strong>Title:</strong> Financial Manager',
+       '<strong>الاسم:</strong> '+blank+' &nbsp;&nbsp; <strong>المسمى الوظيفي:</strong> المدير المالي')
+  +row('<strong>Signature:</strong> '+sigImg+' &nbsp;&nbsp; <strong>Stamp:</strong> '+stampImg,
+       '<strong>التوقيع:</strong> '+sigImg+' &nbsp;&nbsp; <strong>الختم:</strong> '+stampImg)
   +'</table>';
- // The recipient's own acknowledgment — entirely blank/fillable by hand,
- // stacked English-then-Arabic exactly as given (not a table, since it's
- // meant to be filled and signed on paper, not just read).
- var enAck='<div style="'+LTR+';margin-bottom:20pt;font-size:10.5pt;line-height:1.9">'
-  +'<div style="font-weight:800;font-size:12pt;margin-bottom:8pt">BALANCE CONFIRMATION</div>'
-  +'<p>We, the undersigned, confirm that the above balance <strong>agrees / does not agree</strong> with our records as of <strong>'+dateStr+'</strong>.</p>'
-  +'<p>☐ <strong>Confirmed</strong> &nbsp;&nbsp;&nbsp; ☐ <strong>Not Confirmed</strong></p>'
-  +'<p><strong>In case of discrepancy, please provide details:</strong><br>'+blank+blank+'</p>'
-  +'<p><strong>Company Name:</strong> '+blank+'<br>'
-  +'<strong>Authorized Person:</strong> '+blank+'<br>'
-  +'<strong>Title:</strong> '+blank+'<br>'
-  +'<strong>Signature:</strong> '+blank+'<br>'
-  +'<strong>Date:</strong> '+blank+'<br>'
-  +'<strong>Company Stamp:</strong> '+blank+'</p>'
-  +'</div>';
- var arAck='<div style="'+RTL+';font-size:10.5pt;line-height:1.9">'
-  +'<div style="font-weight:800;font-size:12pt;margin-bottom:8pt">إقرار مطابقة الرصيد</div>'
-  +'<p>نقر نحن الموقعين أدناه بأن الرصيد المذكور أعلاه <strong>مطابق / غير مطابق</strong> لسجلاتنا حتى تاريخ <strong>'+dateStr+'</strong>.</p>'
-  +'<p>☐ <strong>مطابق</strong> &nbsp;&nbsp;&nbsp; ☐ <strong>غير مطابق</strong></p>'
-  +'<p><strong>في حالة عدم المطابقة، يرجى توضيح الفروقات:</strong><br>'+blank+blank+'</p>'
-  +'<p><strong>اسم الشركة:</strong> '+blank+'<br>'
-  +'<strong>اسم المسؤول:</strong> '+blank+'<br>'
-  +'<strong>المسمى الوظيفي:</strong> '+blank+'<br>'
-  +'<strong>التوقيع:</strong> '+blank+'<br>'
-  +'<strong>التاريخ:</strong> '+blank+'<br>'
-  +'<strong>ختم الشركة:</strong> '+blank+'</p>'
-  +'</div>';
- return titleBlock+table+enAck+arAck;
+ // The recipient's own acknowledgment — a compact 2-column table (English
+ // left / Arabic right, same pattern as the main table above) instead of
+ // two long stacked blocks, entirely blank/fillable by hand since it
+ // represents the counterparty's own confirmation.
+ var ack='<table style="width:100%;border-collapse:collapse;font-size:9pt;line-height:1.3">'
+  +'<tr><th style="width:50%;background:#7a1f1f;color:#fff;padding:5pt 8pt;font-size:8.5pt;'+LTR+'">BALANCE CONFIRMATION (by recipient)</th>'
+  +'<th style="width:50%;background:#7a1f1f;color:#fff;padding:5pt 8pt;font-size:8.5pt;'+RTL+'">إقرار مطابقة الرصيد (يعبأ من الطرف الآخر)</th></tr>'
+  +row('We confirm the above balance <strong>agrees / does not agree</strong> with our records. &nbsp; ☐ <strong>Confirmed</strong> &nbsp; ☐ <strong>Not Confirmed</strong>',
+       'نقر بأن الرصيد أعلاه <strong>مطابق / غير مطابق</strong> لسجلاتنا. &nbsp; ☐ <strong>مطابق</strong> &nbsp; ☐ <strong>غير مطابق</strong>')
+  +row('If not agreed, details: '+blank+blank,'في حال عدم المطابقة، التفاصيل: '+blank+blank)
+  +row('<strong>Company:</strong> '+blank+' &nbsp;&nbsp; <strong>Authorized Person:</strong> '+blank,
+       '<strong>اسم الشركة:</strong> '+blank+' &nbsp;&nbsp; <strong>اسم المسؤول:</strong> '+blank)
+  +row('<strong>Title:</strong> '+blank+' &nbsp;&nbsp; <strong>Signature:</strong> '+blank,
+       '<strong>المسمى الوظيفي:</strong> '+blank+' &nbsp;&nbsp; <strong>التوقيع:</strong> '+blank)
+  +row('<strong>Date:</strong> '+blank+' &nbsp;&nbsp; <strong>Company Stamp:</strong> '+blank,
+       '<strong>التاريخ:</strong> '+blank+' &nbsp;&nbsp; <strong>ختم الشركة:</strong> '+blank)
+  +'</table>';
+ return titleBlock+table+ack;
 }
 // "Export to Word" the low-dependency way: an HTML file with Word's own XML
 // namespaces and a .doc extension — Word opens and renders this as a real
@@ -5742,7 +5748,7 @@ function pConfirmBalance(){
    var acc=(db.accounts||[]).find(function(a){return a.id===contact.linkedAccId;});
    var bodyHtml=confirmLetterBodyHtml(contact,acc);
    h+='<div class="card" style="max-width:720px"><div class="ct">'+(isAr?'معاينة الخطاب':'Letter Preview')+'</div>'
-    +'<div style="border:1px solid var(--bd2);border-radius:var(--r);padding:18px;background:#fff;color:#111">'+bodyHtml+'</div>'
+    +'<div id="cb-letter-preview" style="border:1px solid var(--bd2);border-radius:var(--r);padding:18px;background:#fff;color:#111">'+bodyHtml+'</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
     +'<button class="btn bp" data-action="cbPrintPDF">🖨️ '+(isAr?'معاينة / طباعة (PDF)':'Preview / Print (PDF)')+'</button>'
     +'<button class="btn bdr" data-action="cbExportWord">📝 '+(isAr?'تصدير Word':'Export Word')+'</button>'
