@@ -91,10 +91,79 @@ html[dir="ltr"] .ind{padding-left:0;padding-right:14px}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script>
+// ── Mizan IQ real backend: auth + licenses ONLY ────────────────────
+// This is intentionally separate from the older, still-unused
+// HAS_CLOUD/accountpro-db block further down (its FB_CONFIG variable is
+// deliberately left undefined so that legacy full-data-sync code stays
+// inert). This config powers exactly two things: real trainee sign-up/
+// sign-in (Firebase Authentication, replacing the old locally-hashed
+// password check) and a real license registry (Realtime Database, under
+// /licenses and /users) that the admin panel and every trainee device can
+// both see live. Accounting data itself (chart of accounts, journals,
+// invoices, etc.) is NOT part of this and stays local per device, exactly
+// as before.
+var MIZAN_FB_CONFIG={
+ apiKey:"AIzaSyBi0ac-BIAl1M8DvCuAZRORF5HzIm0m89k",
+ authDomain:"account-pro-d511d.firebaseapp.com",
+ databaseURL:"https://account-pro-d511d-default-rtdb.asia-southeast1.firebasedatabase.app",
+ projectId:"account-pro-d511d",
+ storageBucket:"account-pro-d511d.firebasestorage.app",
+ messagingSenderId:"63478300303",
+ appId:"1:63478300303:web:a44d0207835c4e7ad47afa"
+};
+// Trainees only ever type a username — Firebase Authentication's
+// email/password provider needs something shaped like an email, so we
+// silently map username -> username@<this fake domain>. It never has to
+// resolve to a real mailbox; Firebase never sends anything to it.
+var MIZAN_AUTH_DOMAIN='mizaniq-trainees.app';
+// A single fixed service account used ONLY so the admin panel's writes to
+// /licenses (issuing, suspending, renewing) are allowed by the database
+// security rules below, without changing how you log into the admin panel
+// itself (that stays local/unchanged). It auto-creates itself on first use.
+var MIZAN_SERVICE_EMAIL='service@mizaniq-app.internal';
+var MIZAN_SERVICE_PASSWORD='Mzn-Svc-9f3Kx72Qz-Admin!';
+try{
+ firebase.initializeApp(MIZAN_FB_CONFIG);
+ window.mizanAuth=firebase.auth();
+ window.mizanLicensesRef=firebase.database().ref('licenses');
+ window.mizanUsersRef=firebase.database().ref('users');
+}catch(e){ console.error('Mizan Firebase init failed',e); }
+function usernameToEmail(u){
+ return String(u||'').trim().toLowerCase().replace(/[^a-z0-9_.-]/g,'')+'@'+MIZAN_AUTH_DOMAIN;
+}
+window.usernameToEmail=usernameToEmail;
+function ensureServiceAdminAuth(){
+ if(!window.mizanAuth)return Promise.reject(new Error('no-auth'));
+ var cu=window.mizanAuth.currentUser;
+ if(cu&&cu.email===MIZAN_SERVICE_EMAIL)return Promise.resolve(cu);
+ // Try creating the service account first (only ever succeeds once, the
+ // very first time this ever runs on a device), then fall back to signing
+ // in if it already exists. This order is deliberate: newer Firebase Auth
+ // versions return the generic 'auth/invalid-credential' (not the older,
+ // more specific 'auth/user-not-found') when signing in to an account that
+ // doesn't exist yet, which made the previous sign-in-first order unable
+ // to reliably detect "doesn't exist yet" and auto-create it.
+ // 'auth/email-already-in-use' from createUser, by contrast, is still an
+ // unambiguous signal, so leading with create-then-fall-back-to-sign-in
+ // works reliably either way.
+ return window.mizanAuth.createUserWithEmailAndPassword(MIZAN_SERVICE_EMAIL,MIZAN_SERVICE_PASSWORD)
+  .then(function(cred){return cred.user;})
+  .catch(function(err){
+   if(err&&err.code==='auth/email-already-in-use'){
+    return window.mizanAuth.signInWithEmailAndPassword(MIZAN_SERVICE_EMAIL,MIZAN_SERVICE_PASSWORD).then(function(cred){return cred.user;});
+   }
+   throw err;
+  });
+}
+window.ensureServiceAdminAuth=ensureServiceAdminAuth;
+</script>
 </head>
 <body>
 <div class="app" id="app"></div>
 <script>
+var licenseState={checked:false,valid:false,data:null,error:''};
 (function() {
 "use strict";
 
@@ -244,6 +313,8 @@ var fAcc='',fFrom='',fTo='',stimer=null,lastSave=null;
 var tAcc={},tJE={},tInv={},tCus={},tSup={},tRcpt={},tPymt={},tCC={},tUser={};
 var tFAEdit={},tFA=null,tLocEdit={};
 var currentUser=null;
+var backupReminderChecked=false; // set once per page load — see maybeShowBackupReminder()
+var cbState={contactId:''}; // Balance Confirmation Letter — see pConfirmBalance()
 var rptFrom='',rptTo='',rptLevel='all',rptShowCodes=false,rptLoaded=false; // report filters
 
 // HELPERS
@@ -432,6 +503,38 @@ function on1(id,evt,fn){
  // Also store for modal re-render recovery
  if(evt==='click')window['__handler_'+id]=fn;
 }
+// Shared by the Company Stamp / Financial Manager Signature uploads in
+// pSettings() — same resize-then-store-as-base64 approach as the existing
+// Company Logo upload (on1('logoFile',...) below), just parameterized so it
+// isn't copy-pasted a third time.
+function wireImageUploadField(inputId,dbField,maxW,maxH){
+ on1(inputId,'change',function(e){
+  var file=e.target.files[0];if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+   var img=new Image();
+   img.onload=function(){
+    var w=img.width,h=img.height;
+    if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
+    if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
+    var canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    var ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0,w,h);
+    // Stamps/signatures are usually transparent-background PNGs meant to
+    // overlay on a document — keep PNG whenever the source was PNG (or has
+    // no reliable extension/type to judge by), only fall back to JPEG for
+    // photos of a physical stamp/signature.
+    var isPNG=file.type==='image/png'||file.name.toLowerCase().endsWith('.png')||!file.type;
+    var compressed=isPNG?canvas.toDataURL('image/png'):canvas.toDataURL('image/jpeg',0.85);
+    db.company[dbField]=compressed;
+    save();render();
+   };
+   img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file);
+ });
+}
 
 // EXCEL
 function exportXLS(aoa,sname,fname){
@@ -453,6 +556,138 @@ function printHTML(title,body){
  var w=window.open('','_blank','width=960,height=750');
  if(w){w.document.write(html);w.document.close();}
  else{var blob=new Blob([html],{type:'text/html'});var u=URL.createObjectURL(blob);window.open(u,'_blank');setTimeout(function(){URL.revokeObjectURL(u);},8000);}
+}
+
+// ── Balance Confirmation Letter ───────────────────────────────
+// (Contacts › Balance Confirmation Letter — see pConfirmBalance() further
+// down for the page itself.) IDs are unique across customers/suppliers
+// ("CUS-…"/"SUP-…"), so a contact is looked up by scanning both lists
+// rather than needing a separate "type" selector in the UI.
+function findContactById(id){
+ if(!id)return null;
+ var c=(db.customers||[]).find(function(x){return x.id===id;});
+ if(c)return Object.assign({},c,{__isSup:false});
+ var s=(db.suppliers||[]).find(function(x){return x.id===id;});
+ if(s)return Object.assign({},s,{__isSup:true});
+ return null;
+}
+// Builds the letter's body HTML (no page chrome) — shared by the on-screen
+// preview, the PDF/print path (via printHTML, which adds the logo header),
+// and the Word export (which adds its own minimal header). `acc` is the
+// contact's linked account; its stored bal is always expressed IN THE
+// ACCOUNT'S OWN NORMAL DIRECTION (see how journal posting updates .bal
+// elsewhere in this file: normal Debit -> bal+=dr-cr, normal Credit ->
+// bal+=cr-dr), so a negative bal means the balance has actually flipped to
+// the opposite side of the account's normal side — e.g. a receivable
+// (normal Debit) with a negative bal means the customer overpaid and is
+// effectively in credit, not debit.
+function confirmLetterBodyHtml(contact,acc,isAr){
+ var co=db.company;
+ var bal=acc.bal||0;
+ var effSide=acc.normal==='Debit'?(bal>=0?'Debit':'Credit'):(bal>=0?'Credit':'Debit');
+ var amount=Math.abs(bal);
+ var contactName=(isAr&&contact.nameAr?contact.nameAr:contact.name)||contact.id;
+ var greeting=isAr?('السادة / '+contactName+' المحترمين'):('Dear '+contactName+',');
+ var mainLine;
+ if(amount<0.005){
+  mainLine=isAr
+   ?('نفيدكم بأنه لا يوجد رصيد مستحق على حسابكم لدينا بتاريخ '+today()+' (الرصيد: '+cur()+' 0.00)، وذلك وفقاً لسجلاتنا حتى تاريخه.')
+   :('We confirm that there is no outstanding balance on your account with us as of '+today()+' (balance: '+cur()+' 0.00), according to our records as of this date.');
+ } else if(effSide==='Credit'){
+  mainLine=isAr
+   ?('نفيدكم بأن رصيدكم الدائن لدينا بتاريخ '+today()+' يبلغ <strong>'+cur()+' '+N(amount)+'</strong>، وذلك وفقاً لسجلاتنا حتى تاريخه.')
+   :('We confirm that your credit balance with us as of '+today()+' amounts to <strong>'+cur()+' '+N(amount)+'</strong>, according to our records as of this date.');
+ } else {
+  mainLine=isAr
+   ?('نفيدكم بأن حسابكم المدين لدينا بتاريخ '+today()+' يبلغ <strong>'+cur()+' '+N(amount)+'</strong>، وذلك وفقاً لسجلاتنا حتى تاريخه.')
+   :('We confirm that your debit balance with us as of '+today()+' amounts to <strong>'+cur()+' '+N(amount)+'</strong>, according to our records as of this date.');
+ }
+ var closing=isAr
+  ?'نرجو التكرم بمراجعة الرصيد أعلاه والتوقيع أدناه إقراراً بصحته، أو موافاتنا بملاحظاتكم خلال خمسة عشر (15) يوماً من تاريخه. ولكم منا جزيل الشكر والتقدير.'
+  :'Kindly review the above balance and sign below to confirm its accuracy, or provide us with your remarks within fifteen (15) days from this date. Thank you for your cooperation.';
+ var sigBlock='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:46pt;gap:20pt">'
+  +'<div style="text-align:center;min-width:120px">'
+   +(co.stamp?'<img src="'+co.stamp+'" style="height:80px;max-width:120px;object-fit:contain;display:block;margin:0 auto 4pt">':'&nbsp;')
+  +'</div>'
+  +'<div style="text-align:center;min-width:150px">'
+   +(co.signature?'<img src="'+co.signature+'" style="height:50px;max-width:150px;object-fit:contain;display:block;margin:0 auto 4pt">':'<div style="height:50px">&nbsp;</div>')
+   +'<div style="border-top:1pt solid #333;padding-top:4pt;font-size:9pt;font-weight:700">'+(isAr?'المدير المالي':'Financial Manager')+'</div>'
+  +'</div>'
+ +'</div>';
+ return '<div style="direction:'+(isAr?'rtl':'ltr')+';text-align:'+(isAr?'right':'left')+';line-height:2;font-size:11pt">'
+  +'<div style="text-align:'+(isAr?'left':'right')+';font-size:9pt;color:#666;margin-bottom:14pt">'+(isAr?'التاريخ: ':'Date: ')+today()+'</div>'
+  +'<div style="font-weight:700;margin-bottom:10pt">'+greeting+'</div>'
+  +'<div style="font-weight:700;text-decoration:underline;margin-bottom:12pt">'+(isAr?'الموضوع: خطاب مصادقة رصيد':'Subject: Balance Confirmation Letter')+'</div>'
+  +'<p>'+(isAr?'نهديكم أطيب التحيات، وبالإشارة إلى حسابكم لدينا،':'Greetings. With reference to your account with us,')+'</p>'
+  +'<p>'+mainLine+'</p>'
+  +'<p>'+closing+'</p>'
+  +sigBlock
+  +'</div>';
+}
+// "Export to Word" the low-dependency way: an HTML file with Word's own XML
+// namespaces and a .doc extension — Word opens and renders this as a real
+// document (images included), with no docx-generation library needed. Same
+// Blob-download technique as exportXLS() above, just a different MIME/ext.
+function exportConfirmLetterWord(title,bodyHtml,fnameBase){
+ var co=db.company;
+ var logoHtml=co.logo?'<img src="'+co.logo+'" style="height:65px;max-width:180px">':'<div style="font-size:14pt;font-weight:900;color:#0D3B6E">'+(co.name||'')+'</div>';
+ var header='<table width="100%" style="margin-bottom:14pt"><tr>'
+  +'<td style="vertical-align:top">'+logoHtml+'</td>'
+  +'<td style="vertical-align:top;text-align:right"><div style="font-size:13pt;font-weight:700;color:#0D3B6E">'+title+'</div>'
+  +'<div style="font-size:10pt;font-weight:700;color:#333">'+(co.name||'')+'</div>'
+  +(co.address?'<div style="font-size:8pt;color:#888">'+co.address+'</div>':'')
+  +(co.vatNo?'<div style="font-size:8pt;color:#888">VAT: '+co.vatNo+(co.cr?' | CR: '+co.cr:'')+'</div>':'')
+  +'</td></tr></table><hr style="border:none;border-top:2pt solid #0D3B6E">';
+ var html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+  +'<head><meta charset="UTF-8"><title>'+title+'</title>'
+  +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->'
+  +'</head><body>'+header+bodyHtml+'</body></html>';
+ var blob=new Blob(['﻿',html],{type:'application/msword'});
+ var a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download=fnameBase+'.doc';
+ document.body.appendChild(a);a.click();document.body.removeChild(a);
+ setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+}
+// Resolves the currently-selected contact + its linked account for the
+// three action buttons on the letter preview (cbPrintPDF/cbExportWord/
+// cbSendEmail below). Returns {contact, acc:null} when the contact has no
+// linked account yet — callers should treat a null acc as "can't generate".
+function cbCurrentLetter(){
+ var contact=findContactById(cbState.contactId);
+ if(!contact)return null;
+ var acc=(db.accounts||[]).find(function(a){return a.id===contact.linkedAccId;});
+ return {contact:contact,acc:acc||null};
+}
+function cbLetterFilenameBase(contact){
+ return 'Balance-Confirmation-'+contact.id+'-'+today();
+}
+function cbPrintPDF(){
+ var r=cbCurrentLetter();if(!r||!r.acc)return;
+ var isAr=lang==='ar';
+ printHTML(isAr?'خطاب مصادقة رصيد':'Balance Confirmation Letter',confirmLetterBodyHtml(r.contact,r.acc,isAr));
+}
+function cbExportWord(){
+ var r=cbCurrentLetter();if(!r||!r.acc)return;
+ var isAr=lang==='ar';
+ exportConfirmLetterWord(isAr?'خطاب مصادقة رصيد':'Balance Confirmation Letter',confirmLetterBodyHtml(r.contact,r.acc,isAr),cbLetterFilenameBase(r.contact));
+}
+function cbSendEmail(){
+ var r=cbCurrentLetter();if(!r||!r.acc)return;
+ var isAr=lang==='ar';
+ if(!r.contact.email){alert(isAr?'لا يوجد بريد إلكتروني مسجل لهذا العميل/المورد. أضِفه أولاً من بطاقة الحساب.':'No email on file for this contact. Add one from their account card first.');return;}
+ // Download the Word letter right now so there is a file ready to attach —
+ // browsers do not let a mailto:/Gmail-compose link attach a file on its
+ // own for security reasons (same limitation as the license WhatsApp/Gmail
+ // buttons elsewhere in this file). Both calls stay synchronous so the
+ // window.open() below still counts as a direct result of this click and
+ // isn't blocked as a popup (see the note on doLicSave for why that matters).
+ exportConfirmLetterWord(isAr?'خطاب مصادقة رصيد':'Balance Confirmation Letter',confirmLetterBodyHtml(r.contact,r.acc,isAr),cbLetterFilenameBase(r.contact));
+ var subject=encodeURIComponent((isAr?'خطاب مصادقة رصيد — ':'Balance Confirmation Letter — ')+(db.company.name||''));
+ var msg=isAr
+  ?('تحية طيبة،\n\nتم تنزيل خطاب مصادقة الرصيد الخاص بحسابكم لدينا على هذا الجهاز (ملف Word). الرجاء إرفاقه يدويًا فى هذه الرسالة قبل الإرسال.\n\nمع تحياتنا،\n'+(db.company.name||''))
+  :('Dear Sir/Madam,\n\nYour balance confirmation letter has just been downloaded to this device (Word file). Please attach it manually to this email before sending.\n\nBest regards,\n'+(db.company.name||''));
+ window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.contact.email)+'&su='+subject+'&body='+encodeURIComponent(msg),'_blank');
 }
 
 // RENDER
@@ -611,71 +846,12 @@ function doLogout(){currentUser=null;clearSession();render();}
 
 
 
-// ── Login screen ──────────────────────────────────────
-function buildLogin(){
- var isAr=lang==='ar';
- var coName=db&&db.company?db.company.name:'AccountPro';
- var logoSVG='<svg width="56" height="56" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" rx="18" fill="#185FA5"/><rect x="38" y="14" width="4" height="52" rx="2" fill="white"/><rect x="10" y="14" width="60" height="4" rx="2" fill="white"/><line x1="18" y1="18" x2="18" y2="46" stroke="white" stroke-width="2"/><line x1="62" y1="18" x2="62" y2="36" stroke="#FFD700" stroke-width="2"/><rect x="8" y="46" width="20" height="5" rx="2.5" fill="rgba(255,255,255,0.85)"/><rect x="52" y="36" width="20" height="5" rx="2.5" fill="#FFD700"/><rect x="11" y="34" width="4" height="12" rx="1" fill="rgba(255,255,255,0.5)"/><rect x="16" y="29" width="4" height="17" rx="1" fill="rgba(255,255,255,0.75)"/><rect x="21" y="24" width="4" height="22" rx="1" fill="white"/><circle cx="57" cy="26" r="3.5" fill="#FFD700"/><circle cx="66" cy="26" r="3.5" fill="#FFD700"/><circle cx="61" cy="18" r="3.5" fill="#FFD700"/><line x1="57" y1="26" x2="66" y2="26" stroke="#FFD700" stroke-width="1.5"/><line x1="57" y1="26" x2="61" y2="18" stroke="#FFD700" stroke-width="1.5"/><line x1="66" y1="26" x2="61" y2="18" stroke="#FFD700" stroke-width="1.5"/><polyline points="24,20 28,13 32,20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
- var brandName=isAr?'<span style="color:#185FA5;font-weight:800">ميزان </span><span style="color:#B8860B;font-weight:900">IQ</span>':'<span style="color:#185FA5;font-weight:800">Mizan</span><span style="color:#B8860B;font-weight:900"> IQ</span>';
- var subtitle=isAr?'الذكاء الذي يفهم أرقامك':'The Intelligence That Understands Your Numbers';
- return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'
-  +'<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--rl);padding:40px;width:400px;box-shadow:0 16px 48px rgba(0,0,0,.12)">'
-  +'<div style="text-align:center;margin-bottom:28px">'
-  +(db.company.logo?'<img src="'+db.company.logo+'" style="height:60px;object-fit:contain;margin-bottom:14px;display:block;margin-left:auto;margin-right:auto">':'')
-  +'<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:10px">'+logoSVG
-  +'<div><div style="font-size:28px;line-height:1.1">'+brandName+'</div>'
-  +'<div style="font-size:10px;color:#378ADD;letter-spacing:2px;margin-top:3px">'+subtitle+'</div></div></div>'
-  +'<div style="font-size:13px;color:var(--t2);margin-top:6px;padding:5px 14px;background:var(--bg);border-radius:99px;display:inline-block">&#127970; '+coName+'</div>'
-  +'</div>'
-  +'<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">'+(isAr?'اسم المستخدم':'Username')+'</label>'
-  +'<input id="loginUser" type="text" placeholder="'+(isAr?'أدخل اسم المستخدم':'Enter username')+'" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
-  +'<div style="margin-bottom:20px"><label style="font-size:12px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px">'+(isAr?'كلمة المرور':'Password')+'</label>'
-  +'<input id="loginPwd" type="password" placeholder="'+(isAr?'أدخل كلمة المرور':'Enter password')+'" style="width:100%;padding:9px 12px;border:1px solid var(--bd2);border-radius:var(--r);font-size:14px;background:var(--sf);color:var(--tx)"></div>'
-  +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">'+(isAr?'اسم المستخدم أو كلمة المرور غير صحيحة':'Invalid username or password')+'</div>'
-  +'<button id="btnLogin" style="width:100%;padding:12px;background:#185FA5;color:white;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer">'+(isAr?'تسجيل الدخول':'Sign In')+'</button>'
-  +'<div style="margin-top:12px;text-align:center"><a href="#" id="btnBackToCompanies" style="font-size:12px;color:var(--t2);text-decoration:none">'+(isAr?'← العودة لقائمة الشركات':'&#8592; Back to companies')+'</a></div>'
-  +'<div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center">'+(isAr?'افتراضي: admin / admin123':'Default: admin / admin123')+'</div>'
-  +'<div style="margin-top:6px;font-size:11px;text-align:center"><a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">'+(isAr?'نسيت كلمة المرور؟':'Forgot password? Reset admin')+'</a></div>'
-  +'</div></div>';
-}
-
-
-// ── Users management page ─────────────────────────────
-function pUsers(){
-  var h=tb('Users & Permissions',
-  (canAdd('users')?btn_('bp','btnAddUser',ic('plus')+' New User'):''));
- h+='<div class="pg">';
- // User count warning
- var userCount=(db.users||[]).filter(function(u){return u.active;}).length;
- if(userCount>=3)h+='<div class="hint" style="background:#fef9c3;border-color:#fbbf24;color:#92400e">Maximum 3 active users reached (excluding admin)</div>';
- h+='<div class="card"><div class="tw"><table><thead><tr>'
-  +'<th>Login ID</th><th>Name</th><th>Role</th><th>Status</th><th></th>'
-  +'</tr></thead><tbody>';
- // Admin row (always first)
- h+='<tr style="background:var(--bg)">'
-  +'<td><span class="tag">admin</span></td>'
-  +'<td><strong>Administrator</strong></td>'
-  +'<td><span class="b bgn">Admin (Full Access)</span></td>'
-  +'<td><span class="b bgn">Active</span></td>'
-  +'<td><div style="display:flex;gap:3px">'
-  +(CURRENT_USER&&CURRENT_USER.id==='admin'?'<button class="btn bsm bg0" data-chpwd="admin">🔑 Change Password</button>':'')
-  +'</div></td></tr>';
- (db.users||[]).forEach(function(u){
-  h+='<tr>'
-   +'<td><span class="tag">'+u.username+'</span></td>'
-   +'<td>'+u.name+'</td>'
-   +'<td><span class="b bpu" style="font-size:10px">'+u.role+'</span></td>'
-   +'<td><span class="b '+(u.active?'bgn':'bgr')+'">'+(u.active?'Active':'Inactive')+'</span></td>'
-   +'<td><div style="display:flex;gap:3px">'
-   +(canEdit('users')?'<button class="btn bsm bg0" data-edituser="'+u.id+'">'+ic('edit')+'</button>':'')
-   +(canEdit('users')?'<button class="btn bsm bg0" data-chpwd="'+u.id+'">🔑</button>':'')
-   +(canEdit('users')?'<button class="btn bsm bg0" data-toggleuser="'+u.id+'">'+(u.active?'Deactivate':'Activate')+'</button>':'')
-   +(canDel('users')?'<button class="btn bsm bg0 bdr" data-deluser="'+u.id+'">'+ic('del')+'</button>':'')
-   +'</div></td></tr>';
- });
- h+='</tbody></table></div></div></div>';
- return h;
-}
+// NOTE: an older, unreachable pair of buildLogin()/pUsers() function
+// declarations used to live here (dead code from an earlier merge of
+// separate files) — since a later function declaration with the same
+// name silently overrides an earlier one in JS, these two were NEVER
+// actually used; the live versions are further down in the file.
+// Removed during the 2026-09-02 cleanup pass to avoid confusion.
 
 // ── User modal ────────────────────────────────────────
 var MODULES=[
@@ -786,21 +962,306 @@ function importCoA(){
  alert('Chart of Accounts imported successfully! 138 accounts added.');
 }
 
+// ── Backup / Restore ────────────────────────────────────────────
+// The accounting data (db: accounts, journals, invoices, customers,
+// suppliers, receipts, payments, fixed assets, etc.) lives only in this
+// browser's local storage (see save()/loadFromLocalStorage() above) — it is
+// NOT synced to any server. That's deliberate (each trainee's practice data
+// stays private to their own device instead of mixing with everyone else's
+// on a shared cloud path), but it also means a device format, a browser
+// switch, or clearing site data wipes it with no way to recover it. These
+// two functions give the user a manual way to move that data to a file and
+// back, independent of the device/browser it was created on.
+function exportBackup(){
+ var payload=JSON.stringify(db,null,2);
+ var ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+ var fname='mizan-iq-backup-'+ts+'.json';
+ // Prefer the File System Access API's native "Save As" dialog, so the user
+ // can pick the drive/folder themselves (a plain <a download> instead always
+ // saves straight to the browser's fixed default Downloads folder, with no
+ // location prompt). Must be called synchronously from the click handler —
+ // browsers only grant this while still inside the "user activation" of the
+ // click that triggered it — which is exactly how exportBackup() is invoked
+ // (see window.xAction / the data-action click delegate below).
+ if(window.showSaveFilePicker){
+  window.showSaveFilePicker({
+   suggestedName:fname,
+   types:[{description:'JSON Backup',accept:{'application/json':['.json']}}]
+  }).then(function(handle){
+   return handle.createWritable().then(function(writable){
+    return writable.write(payload).then(function(){return writable.close();});
+   });
+  }).then(function(){
+   markBackupDone();
+  }).catch(function(err){
+   if(err&&err.name==='AbortError')return; // user closed the Save-As dialog — do nothing
+   exportBackupClassic(payload,fname); // picker failed for some other reason — fall back
+  });
+  return;
+ }
+ // Fallback for browsers without the File System Access API (Firefox,
+ // Safari, older Chrome/Edge): a classic forced download. Where the user
+ // can't pick a location this way, they can still get a Save-As prompt every
+ // time by turning on their browser's "Ask where to save each file before
+ // downloading" setting.
+ exportBackupClassic(payload,fname);
+}
+function exportBackupClassic(payload,fname){
+ var blob=new Blob([payload],{type:'application/json'});
+ var url=URL.createObjectURL(blob);
+ var a=document.createElement('a');
+ a.href=url;
+ a.download=fname;
+ document.body.appendChild(a);
+ a.click();
+ document.body.removeChild(a);
+ setTimeout(function(){URL.revokeObjectURL(url);},1000);
+ markBackupDone();
+}
+// Records the moment a backup actually went out (both save paths call this —
+// see the writable.close().then() above for the File System Access path).
+// Two things read this: the "Last backup" line on the Backup & Restore page,
+// and the weekly reminder below, which uses it to avoid nagging again right
+// after the user just backed up.
+function markBackupDone(){
+ try{
+  var now=String(Date.now());
+  localStorage.setItem('mizan_last_backup_at',now);
+  localStorage.setItem('mizan_last_backup_reminder_at',now);
+ }catch(e){}
+ if(view==='backup')render(); // refresh the "Last backup" timestamp if it's on screen
+}
+// Weekly reminder: if it's been 7+ days since the user was last asked (or
+// since they last actually backed up — see markBackupDone), nudge them once.
+// Deliberately re-arms itself every 7 days from whichever came later (a
+// reminder shown, or a real backup) rather than nagging on every single page
+// load, and offers to run the export right there so acting on it is one click.
+var WEEK_MS=7*24*60*60*1000;
+function maybeShowBackupReminder(){
+ try{
+  var last=localStorage.getItem('mizan_last_backup_reminder_at');
+  if(last&&(Date.now()-Number(last))<WEEK_MS)return;
+  localStorage.setItem('mizan_last_backup_reminder_at',String(Date.now()));
+ }catch(e){return;}
+ var isAr=lang==='ar';
+ var doIt=confirm(isAr
+  ?'⏰ تذكير أسبوعي: يُنصح بعمل نسخة احتياطية من بيانات البرنامج بشكل دورى حتى لا تفقدها. هل تريد تصدير نسخة احتياطية الآن؟'
+  :'⏰ Weekly reminder: it\'s a good idea to back up your program data regularly so you don\'t lose it. Export a backup now?');
+ if(doIt)exportBackup();
+}
+function importBackupFile(file){
+ var isAr=lang==='ar';
+ var reader=new FileReader();
+ reader.onload=function(ev){
+  var parsed;
+  try{parsed=JSON.parse(ev.target.result);}catch(err){
+   alert(isAr?'⚠️ الملف غير صالح — تأكد أنه ملف نسخة احتياطية (JSON) صحيح.':'⚠️ Invalid file — make sure this is a valid backup (JSON) file.');
+   return;
+  }
+  if(!parsed||!Array.isArray(parsed.accounts)){
+   alert(isAr?'⚠️ هذا الملف لا يبدو نسخة احتياطية صحيحة من Mizan IQ.':'⚠️ This file does not look like a valid Mizan IQ backup.');
+   return;
+  }
+  if(!confirm(isAr?'سيتم استبدال كل بيانات البرنامج الحالية (الحسابات والقيود والفواتير والعملاء...) بالبيانات الموجودة فى هذا الملف. هذا الإجراء لا يمكن التراجع عنه. هل تريد المتابعة؟':'This will REPLACE all current program data (accounts, journals, invoices, customers...) with the data in this file. This cannot be undone. Continue?')){
+   return;
+  }
+  db=normalizeDB(parsed);
+  save();
+  render();
+  alert(isAr?'✅ تم استعادة النسخة الاحتياطية بنجاح.':'✅ Backup restored successfully.');
+ };
+ reader.readAsText(file);
+}
+
 function render(){
  CURRENT_USER=currentUser;
  window.db=db;window.lang=lang;window.licAdminState=licAdminState;
+ // Once per page load, once someone is actually logged in (local admin,
+ // local user, or a restored/fresh trainee session — every login path ends
+ // up here), check whether the weekly backup reminder is due. Delayed so the
+ // native confirm() dialog doesn't pop up over a screen that hasn't painted
+ // yet.
+ if(currentUser&&!backupReminderChecked){
+  backupReminderChecked=true;
+  setTimeout(maybeShowBackupReminder,1200);
+ }
+  // ── Create pending user on first run ─────────────────────
+  try{
+   var pu=JSON.parse(localStorage.getItem('mizan_pending_user')||'null');
+   if(pu&&pu.username&&!db.users.find(function(u){return u.username===pu.username;})){
+    db.users.push({id:'U'+Date.now(),username:pu.username,passwordHash:pu.passwordHash,name:pu.name||pu.username,role:'user',active:true,perms:{}});
+    save();localStorage.removeItem('mizan_pending_user');
+   }
+  }catch(e2){}
  var el=document.getElementById('app');
  if(!el)return;
  // ── License Check ─────────────────────────────────────────
  if(!licenseState.checked)checkLicense();
- if(!licenseState.valid){el.innerHTML=buildLicenseScreen();return;}
+ if(!licenseState.valid){
+  el.innerHTML=buildLicenseScreen();
+  setTimeout(function(){
+   var btn=document.getElementById('licBtn'),inp=document.getElementById('licKey'),msg=document.getElementById('licMsg');
+   if(!btn||!inp||!msg)return;
+   inp.addEventListener('input',function(){this.value=sanitizeLicenseKey(this.value);});
+   function doActivate(){
+    var isAr2=lang==='ar';
+    var key=sanitizeLicenseKey(inp.value.trim());
+    inp.value=key;
+    if(!key){msg.innerHTML='<span style="color:#EF4444">'+(isAr2?'أدخل المفتاح':'Enter the key')+'</span>';return;}
+    if(!KEY_PATTERN.test(key)){msg.innerHTML='<span style="color:#EF4444">'+(isAr2?'صيغة غير صحيحة':'Invalid format')+'</span>';return;}
+    if(!isValidLicenseKey(key)){msg.innerHTML='<span style="color:#EF4444">'+(isAr2?'هذا المفتاح غير صالح':'This key is not valid')+'</span>';return;}
+    var exp=licExpiryFromKey(key);
+    if(exp&&new Date(exp)<new Date()){msg.innerHTML='<span style="color:#EF4444">'+(isAr2?'انتهت صلاحية هذا المفتاح':'This key has expired')+'</span>';return;}
+    msg.innerHTML='<span style="color:#6B7280">'+(isAr2?'جاري التحقق...':'Verifying...')+'</span>';
+    btn.disabled=true;
+    var lic={key:key,valid:true,traineeName:'',course:'',expiry:exp,activatedAt:new Date().toISOString()};
+    localStorage.setItem('mizan_license',JSON.stringify(lic));
+    msg.innerHTML='<span style="color:#059669">✅ '+(isAr2?'تم التفعيل! جاري التحميل...':'Activated! Loading...')+'</span>';
+    setTimeout(function(){location.reload();},1500);
+   }
+   btn.addEventListener('click',doActivate);
+   inp.addEventListener('keydown',function(e){if(e.key==='Enter')doActivate();});
+  },50);
+  return;
+ }
  // ── Normal App Flow ───────────────────────────────────────
- if(!currentUser){el.innerHTML=buildLogin();setTimeout(function(){var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');if(!bEl)return;function doLogin(){var uv=((uEl&&uEl.value)||'').trim();var pv=((pEl&&pEl.value)||'').trim();var usr=db.users.find(function(x){return x.username===uv&&x.active;});if(!usr||usr.passwordHash!==hashPwd(pv)){var e2=document.getElementById('loginErr');if(e2)e2.style.display='block';return;}currentUser=usr;saveSession(usr);render();}bEl.addEventListener('click',doLogin);if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});var rEl=document.getElementById('btnResetAdmin');if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});},50);return;} try{el.innerHTML=buildLayout();bindEvents();}
+ if(!currentUser){
+  el.innerHTML=buildLogin();
+  setTimeout(function(){
+   var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPwd'),bEl=document.getElementById('btnLogin');
+   if(!bEl)return;
+   function showLoginErr(text){
+    var e2=document.getElementById('loginErr');
+    if(!e2)return;
+    if(text)e2.textContent=text;
+    e2.style.display='block';
+   }
+   function doLogin(){
+    var uv=((uEl&&uEl.value)||'').trim();
+    var pv=((pEl&&pEl.value)||'').trim();
+    var e2=document.getElementById('loginErr');
+    if(e2)e2.style.display='none';
+    // Local accounts (the admin account, and any user created directly in
+    // db.users) are checked first and keep working exactly as before —
+    // this part of the login system was NOT changed.
+    var usr=db.users.find(function(x){return x.username===uv&&x.active;});
+    if(usr){
+     if(usr.passwordHash===hashPwd(pv)){currentUser=usr;saveSession(usr);render();}
+     else showLoginErr();
+     return;
+    }
+    // Not a known local account -> treat it as a trainee account and
+    // verify it against the real backend (Firebase Authentication +
+    // the /licenses registry), instead of a locally-stored password hash.
+    if(!window.mizanAuth||!window.usernameToEmail){showLoginErr();return;}
+    bEl.disabled=true;
+    window.mizanAuth.signInWithEmailAndPassword(window.usernameToEmail(uv),pv).then(function(cred){
+     return window.mizanUsersRef.child(cred.user.uid).once('value').then(function(snap){
+      var prof=snap.val();
+      if(!prof||!prof.licenseKey)throw {code:'mizan/no-profile'};
+      return window.mizanLicensesRef.child(prof.licenseKey).once('value').then(function(licSnap){
+       var lic=licSnap.val();
+       if(!lic||lic.active===false)throw {code:'mizan/suspended'};
+       if(lic.expiry&&new Date(lic.expiry)<new Date())throw {code:'mizan/expired'};
+       currentUser={id:cred.user.uid,username:prof.username||uv,name:prof.username||uv,role:'user',active:true,perms:{}};
+       window.mizanCurrentTrainee={uid:cred.user.uid,licenseKey:prof.licenseKey};
+       try{localStorage.setItem('mizan_license',JSON.stringify({key:prof.licenseKey,valid:true,firebaseManaged:true,expiry:lic.expiry||'',activatedAt:new Date().toISOString()}));}catch(e3){}
+       bEl.disabled=false;
+       render();
+      });
+     });
+    }).catch(function(err){
+     bEl.disabled=false;
+     window.mizanAuth.signOut().catch(function(){});
+     var isAr2=lang==='ar';
+     var msg=isAr2?'اسم المستخدم أو كلمة المرور غير صحيحة':'Invalid username or password';
+     if(err&&err.code==='mizan/suspended')msg=isAr2?'تم إيقاف هذا الحساب. تواصل مع المدرب':'This account has been suspended. Contact your trainer';
+     else if(err&&err.code==='mizan/expired')msg=isAr2?'انتهت صلاحية الترخيص. تواصل مع المدرب':'Your license has expired. Contact your trainer';
+     showLoginErr(msg);
+    });
+   }
+   bEl.addEventListener('click',doLogin);
+   if(pEl)pEl.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+   var rEl=document.getElementById('btnResetAdmin');
+   if(rEl)rEl.addEventListener('click',function(e){e.preventDefault();var adm=db.users.find(function(x){return x.role==='admin';});if(adm){adm.passwordHash=hashPwd('admin123');save();alert('Admin password reset to: admin123');}});
+  },50);
+  return;
+ }
+ try{el.innerHTML=buildLayout();bindEvents();}
  catch(e){el.innerHTML='<div style="color:red;padding:20px;background:#fff1f0;margin:20px;border-radius:8px"><b>Error: </b>'+e.message+'<br><small>'+(e.stack||'').replace(/</g,'&lt;').slice(0,400)+'</small></div>';}
 }
 // ── LICENSE SYSTEM ────────────────────────────────────────────
 var LICENSE_DB_PATH='mizan_licenses';
-var licenseState={checked:true,valid:true,data:{traineeName:'',key:'DEVELOPER'},error:''};
+// licenseState defined at top
+
+// ── License key generation + offline verification ──────────────
+// SECRET must be IDENTICAL to the copy in activate.html, or keys
+// issued here won't verify there. Anyone who reads this source can
+// find it — this stops casual/typed-in keys, not a determined reader.
+var LICENSE_SALT='MzIQ-9Kf3-Secret-2026-XyQ';
+function licStrHash(s){
+ var h=0;
+ for(var i=0;i<s.length;i++){h=(Math.imul(31,h)+s.charCodeAt(i))|0;}
+ return h;
+}
+function licChecksum(partA,partB,expCode){
+ var h=licStrHash(partA+'|'+partB+'|'+expCode+'|'+LICENSE_SALT);
+ var s=Math.abs(h).toString(36).toUpperCase();
+ while(s.length<6)s='0'+s;
+ return s.slice(0,6);
+}
+// Used by the in-app "license expired / re-activate" screen (mirrors the
+// checks in activate.html exactly, so a key rejected/accepted there behaves
+// the same way here).
+var KEY_PATTERN=/^MIZAN-[A-Z0-9]{4,8}-[A-Z0-9]{4,8}-[0-9]{8}-[A-Z0-9]{4,8}$/;
+function isValidLicenseKey(k){
+ var parts=k.split('-');
+ if(parts.length!==5||parts[0]!=='MIZAN')return false;
+ return licChecksum(parts[1],parts[2],parts[3])===parts[4];
+}
+function licExpiryFromKey(k){
+ var expCode=k.split('-')[3];
+ if(!expCode||expCode==='00000000')return '';
+ return expCode.slice(0,4)+'-'+expCode.slice(4,6)+'-'+expCode.slice(6,8);
+}
+function sanitizeLicenseKey(v){
+ return (v||'').toUpperCase().replace(/[‐-―−﹘﹣－]/g,'-').replace(/[^A-Z0-9-]/g,'');
+}
+function licRandSeg(len){
+ var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion when read aloud
+ var s='';
+ for(var i=0;i<len;i++)s+=chars.charAt(Math.floor(Math.random()*chars.length));
+ return s;
+}
+// spec<=0 (or falsy '0') = lifetime key, encoded as '00000000'.
+// Otherwise the expiry date is baked into the key as YYYYMMDD, and is
+// part of the checksum input — a trainee can't edit the date without
+// breaking the checksum.
+// spec accepts: a plain number/numeric-string = months (back-compat),
+// a string ending in 'm' = months (e.g. '12m'), or a string ending in
+// 'd' = days (e.g. '15d').
+function licExpCode(spec){
+ var s=String(spec==null?'':spec).trim();
+ if(!s||s==='0')return '00000000';
+ var d=new Date();
+ if(/d$/i.test(s)){
+  var days=parseInt(s,10);
+  if(!days||days<=0)return '00000000';
+  d.setDate(d.getDate()+days);
+ }else{
+  var mo=parseInt(s,10);
+  if(!mo||mo<=0)return '00000000';
+  d.setMonth(d.getMonth()+mo);
+ }
+ var y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+ return ''+y+m+day;
+}
+window.generateLicenseKey=function(seedA,seedB,months){
+ var partA=licRandSeg(6),partB=licRandSeg(6);
+ var expCode=licExpCode(months);
+ var key='MIZAN-'+partA+'-'+partB+'-'+expCode+'-'+licChecksum(partA,partB,expCode);
+ return {key:key,partA:partA,partB:partB,expCode:expCode};
+};
 
 // ── Global State Variables ────────────────────────────────────
 var openSections={};
@@ -813,189 +1274,65 @@ function checkLicense(){
   var stored=localStorage.getItem('mizan_license');
   if(!stored){licenseState={checked:true,valid:false,data:null,error:'no_license'};return;}
   var lic=JSON.parse(stored);
-  // Check expiry
-  if(lic.expiry&&new Date(lic.expiry)<new Date()){
+  if(!lic||!lic.valid){licenseState={checked:true,valid:false,data:null,error:'no_license'};return;}
+  // Accounts created through the real backend (Firebase, marked
+  // firebaseManaged below) are re-checked live at every login and session
+  // restore (see doLogin / onAuthStateChanged) — that's the authoritative,
+  // always-current check now, so a stale locally-cached expiry here (e.g.
+  // right after the admin renews a license, which only updates the server)
+  // must not block them from even reaching the login screen. Older,
+  // purely-local accounts (activated before this migration) have no such
+  // live check, so they keep the original local expiry gate.
+  if(!lic.firebaseManaged&&lic.expiry&&new Date(lic.expiry)<new Date()){
    licenseState={checked:true,valid:false,data:lic,error:'expired'};return;
   }
   licenseState={checked:true,valid:true,data:lic,error:''};
-  // Async Firebase verification (non-blocking)
-  if(lic.key&&typeof firebase!=='undefined'){
-   firebase.database().ref(LICENSE_DB_PATH+'/'+lic.key).once('value').then(function(snap){
-    var d=snap.val();
-    if(!d||d.active===false){
-     licenseState.valid=false;licenseState.error='revoked';
-     localStorage.removeItem('mizan_license');
-     render();
-    } else if(d.expiry&&new Date(d.expiry)<new Date()){
-     licenseState.valid=false;licenseState.error='expired';
-     localStorage.removeItem('mizan_license');
-     render();
+  // Create pending user if exists
+  try{
+   var pu=JSON.parse(localStorage.getItem('mizan_pending_user')||'null');
+   if(pu&&pu.username){
+    if(!db.users.find(function(u){return u.username===pu.username;})){
+     db.users.push({id:'U'+Date.now(),username:pu.username,passwordHash:pu.passwordHash,name:pu.name||pu.username,role:'user',active:true,perms:{}});
+     save();
     }
-   }).catch(function(){/* offline — use cached license */});
-  }
+    localStorage.removeItem('mizan_pending_user');
+   }
+  }catch(e2){}
  }catch(e){licenseState={checked:true,valid:false,data:null,error:'invalid'};}
 }
 
 function buildLicenseScreen(){
  var isAr=lang==='ar';
  var err=licenseState.error;
- var errMsg={
-  no_license:isAr?'لا يوجد ترخيص. أدخل مفتاح التفعيل الخاص بك':'No license found. Enter your activation key.',
-  expired:isAr?'انتهت صلاحية الترخيص. تواصل مع المدرب للتجديد':'License expired. Contact your trainer to renew.',
-  revoked:isAr?'تم إلغاء هذا الترخيص. تواصل مع المدرب':'This license has been revoked. Contact your trainer.',
-  invalid:isAr?'مفتاح التفعيل غير صحيح':'Invalid activation key.',
-  not_found:isAr?'المفتاح غير موجود في قاعدة البيانات':'Key not found in database.'
- }[err]||err;
-
- return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0D3B6E,#185FA5)">'
-  +'<div style="background:#fff;border-radius:20px;padding:40px;width:460px;box-shadow:0 24px 64px rgba(0,0,0,.25);text-align:center">'
-  // Logo
-  +'<div style="margin-bottom:16px"><span style="font-size:36px;font-weight:800;color:#185FA5">Mizan </span><span style="font-size:36px;font-weight:900;color:#B8860B">IQ</span></div>'
-  +'<div style="font-size:12px;color:#666;margin-bottom:24px;letter-spacing:1px">'+(isAr?'الذكاء الذي يفهم أرقامك':'The Intelligence That Understands Your Numbers')+'</div>'
-  +'<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:14px;margin-bottom:20px;font-size:13px;color:#92400E">🔐 '+(isAr?'هذه النسخة محمية بحقوق الملكية الفكرية':'This copy is protected by intellectual property rights')+'</div>'
-  // Error msg
-  +(errMsg?'<div style="background:#FEE2E2;border:1px solid #EF4444;border-radius:8px;padding:12px;margin-bottom:18px;font-size:13px;color:#B91C1C">⚠️ '+errMsg+'</div>':'')
-  // Input
-  +'<div style="text-align:right;margin-bottom:16px">'
-  +'<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px">'+(isAr?'🔑 مفتاح التفعيل':'🔑 Activation Key')+'</label>'
-  +'<input id="licKeyInput" placeholder="MIZAN-XXXX-XXXX-XXXX" style="width:100%;padding:12px 14px;border:2px solid #D1D5DB;border-radius:10px;font-size:14px;font-family:monospace;text-align:center;box-sizing:border-box;letter-spacing:2px;text-transform:uppercase">'
-  +'</div>'
-  +'<button id="btnActivate" style="width:100%;padding:13px;background:#185FA5;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px">🚀 '+(isAr?'تفعيل البرنامج':'Activate Program')+'</button>'
-  +'<div id="licMsg" style="font-size:12px;color:#6B7280;min-height:20px"></div>'
-  +'<div style="margin-top:24px;padding-top:20px;border-top:1px solid #E5E7EB;font-size:11px;color:#9CA3AF">'
-  +(isAr?'للحصول على مفتاح التفعيل، تواصل مع المدرب:<br><b>خالد العمري</b>':'For activation key, contact your trainer:<br><b>Khalid Al-Omary</b>')+'<br>'
-  +'<a href="mailto:loloo31@gmail.com" style="color:#185FA5">loloo31@gmail.com</a>'
-  +'</div>'
-  +'</div></div>'
-
-  +'<script>'
-  +'document.getElementById("btnActivate").addEventListener("click",function(){'
-  +' var key=(document.getElementById("licKeyInput").value||"").trim().toUpperCase();'
-  +' var msg=document.getElementById("licMsg");'
-  +' if(!key){msg.textContent="'+(isAr?'أدخل مفتاح التفعيل':'Enter activation key')+'";return;}'
-  +' msg.textContent="'+(isAr?'جاري التحقق...':'Verifying...')+'";'
-  +' window.activateLicense(key);'
-  +'});'
-  +'document.getElementById("licKeyInput").addEventListener("keydown",function(e){if(e.key==="Enter")document.getElementById("btnActivate").click();});'
-  +'<\\/script>';
-}
-
-window.activateLicense=function(key){
- var msg=document.getElementById('licMsg');
- var isAr=lang==='ar';
- // Check format: MIZAN-XXXX-XXXX-XXXX
- if(!/^MIZAN-[A-Z0-9]{4,6}-[A-Z0-9]{4,6}-[A-Z0-9]{4,6}$/.test(key)){
-  if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'صيغة المفتاح غير صحيحة':'Invalid key format')+'</span>';
-  return;
- }
- // Try Firebase first
- if(typeof firebase!=='undefined'){
-  firebase.database().ref(LICENSE_DB_PATH+'/'+key).once('value').then(function(snap){
-   var d=snap.val();
-   if(!d){
-    if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'المفتاح غير موجود':'Key not found')+'</span>';
-    licenseState.error='not_found';
-    return;
-   }
-   if(d.active===false){
-    if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'هذا المفتاح معطل':'This key is disabled')+'</span>';
-    return;
-   }
-   if(d.expiry&&new Date(d.expiry)<new Date()){
-    if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'انتهت صلاحية هذا المفتاح':'This key has expired')+'</span>';
-    return;
-   }
-   // Save license
-   var lic={key:key,trainee:d.trainee||'',traineeName:d.traineeName||'',course:d.course||'',expiry:d.expiry||'',activatedAt:new Date().toISOString()};
-   localStorage.setItem('mizan_license',JSON.stringify(lic));
-   licenseState={checked:true,valid:true,data:lic,error:''};
-   if(msg)msg.innerHTML='<span style="color:#059669">✅ '+(isAr?'تم التفعيل بنجاح! مرحباً '+lic.traineeName:'Activated! Welcome '+lic.traineeName)+'</span>';
-   setTimeout(function(){render();},1200);
-  }).catch(function(){
-   // Offline fallback — accept key with basic format check
-   var lic={key:key,trainee:'',traineeName:'',course:'',expiry:'',activatedAt:new Date().toISOString(),offline:true};
-   localStorage.setItem('mizan_license',JSON.stringify(lic));
-   licenseState={checked:true,valid:true,data:lic,error:''};
-   if(msg)msg.innerHTML='<span style="color:#059669">✅ '+(isAr?'تم التفعيل (وضع عدم الاتصال)':'Activated (offline mode)')+'</span>';
-   setTimeout(function(){render();},1000);
-  });
- } else {
-  // No Firebase — offline mode
-  var lic={key:key,trainee:'',traineeName:'',course:'',expiry:'',activatedAt:new Date().toISOString(),offline:true};
-  localStorage.setItem('mizan_license',JSON.stringify(lic));
-  licenseState={checked:true,valid:true,data:lic,error:''};
-  if(msg)msg.innerHTML='<span style="color:#059669">✅ '+(isAr?'تم التفعيل':'Activated')+'</span>';
-  setTimeout(function(){render();},1000);
- }
-};
-
-// ── Admin License Generator Tool ─────────────────────────────
-window.generateLicenseKey=function(traineeId,courseName,months){
- var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
- function rand(n){var s='';for(var i=0;i<n;i++)s+=chars[Math.floor(Math.random()*chars.length)];return s;}
- var key='MIZAN-'+rand(4)+rand(2)+'-'+rand(6)+'-'+rand(6);
- var expiry=new Date();
- expiry.setMonth(expiry.getMonth()+(months||12));
- return {
-  key:key,
-  trainee:traineeId,
-  traineeName:'',
-  course:courseName||'Mizan IQ Course',
-  expiry:expiry.toISOString().slice(0,10),
-  active:true,
-  createdAt:new Date().toISOString()
+ var errMsgs={
+  no_license:isAr?'\u0623\u062f\u062e\u0644 \u0645\u0641\u062a\u0627\u062d \u0627\u0644\u062a\u0641\u0639\u064a\u0644':'Enter your activation key',
+  expired:isAr?'\u0627\u0646\u062a\u0647\u062a \u0635\u0644\u0627\u062d\u064a\u0629 \u0627\u0644\u062a\u0631\u062e\u064a\u0635. \u062a\u0648\u0627\u0635\u0644 \u0645\u0639 \u0627\u0644\u0645\u062f\u0631\u0628':'License expired. Contact trainer',
+  revoked:isAr?'\u062a\u0645 \u0625\u0644\u063a\u0627\u0621 \u0647\u0630\u0627 \u0627\u0644\u062a\u0631\u062e\u064a\u0635':'License revoked. Contact trainer',
+  not_found:isAr?'\u0627\u0644\u0645\u0641\u062a\u0627\u062d \u063a\u064a\u0631 \u0645\u0648\u062c\u0648\u062f':'Key not found'
  };
-};
-
-window.doLicSave=function(){
- var isAr=lang==='ar';
- var nm=((document.getElementById('lic-name')||{}).value||'').trim();
- if(!nm){alert(isAr?'أدخل اسم المتدرب':'Enter trainee name');return;}
- var key2=((document.getElementById('lic-key')||{}).value||'').trim();
- var mo=parseInt(((document.getElementById('lic-months')||{}).value)||'12');
- var exp2='';
- if(mo>0){var d2=new Date();d2.setMonth(d2.getMonth()+mo);exp2=d2.toISOString().slice(0,10);}
- var lic2={key:key2,traineeName:nm,contact:((document.getElementById('lic-contact')||{}).value||'').trim(),course:((document.getElementById('lic-course')||{}).value||''),expiry:exp2,price:parseFloat(((document.getElementById('lic-price')||{}).value)||'0'),active:true,createdAt:new Date().toISOString()};
- db.licenses=db.licenses||[];db.licenses.push(lic2);
- if(typeof firebase!=='undefined'){firebase.database().ref(LICENSE_DB_PATH+'/'+key2).set({traineeName:lic2.traineeName,course:lic2.course,expiry:lic2.expiry,active:true,createdAt:lic2.createdAt});}
- save();licAdminState.showForm=false;render();
- setTimeout(function(){
-  var phone=lic2.contact.replace(/[^0-9]/g,'');
-  if(phone.startsWith('05'))phone='966'+phone.slice(1);
-  else if(phone.startsWith('5')&&phone.length===9)phone='966'+phone;
-  var msg='مرحباً '+nm+' 🎓\n\nنسختك من برنامج Mizan IQ جاهزة!\n\n🔑 مفتاح التفعيل:\n'+key2+'\n\n📅 صالح حتى: '+(exp2||'غير محدود')+'\n📋 الدورة: '+lic2.course+'\n\nخطوات التفعيل:\n1️⃣ افتح البرنامج\n2️⃣ أدخل المفتاح\n3️⃣ اضغط تفعيل\n\n🌟 خالد العمري — Mizan IQ';
-  var url=phone.length>=9?'https://wa.me/'+phone+'?text='+encodeURIComponent(msg):'https://wa.me/?text='+encodeURIComponent(msg);
-  window.open(url,'_blank');
- },400);
-};
-window.licNew=function(){licAdminState.showForm=!licAdminState.showForm;render();};
-window.licCancel=function(){licAdminState.showForm=false;render();};
-window.licRegenKey=function(){var g=window.generateLicenseKey('','',12);var k=document.getElementById('lic-key');if(k)k.value=g.key;};
-window.licSuspend=function(key){var l=(db.licenses||[]).find(function(x){return x.id===key||x.key===key;});if(l&&confirm('Suspend?')){l.active=false;if(typeof firebase!=='undefined')firebase.database().ref(LICENSE_DB_PATH+'/'+key+'/active').set(false);save();render();}};
-window.licActivate=function(key){var l=(db.licenses||[]).find(function(x){return x.id===key||x.key===key;});if(l){l.active=true;if(typeof firebase!=='undefined')firebase.database().ref(LICENSE_DB_PATH+'/'+key+'/active').set(true);save();render();}};
-window.licRenew=function(key){var l=(db.licenses||[]).find(function(x){return x.id===key||x.key===key;});if(l){var d=new Date(l.expiry&&new Date(l.expiry)>new Date()?l.expiry:new Date());d.setFullYear(d.getFullYear()+1);l.expiry=d.toISOString().slice(0,10);l.active=true;if(typeof firebase!=='undefined')firebase.database().ref(LICENSE_DB_PATH+'/'+key).update({expiry:l.expiry,active:true});save();render();alert('✅ تم التجديد حتى: '+l.expiry);}};
-window.licWA=function(key){var l=(db.licenses||[]).find(function(x){return x.id===key||x.key===key;});if(!l)return;var phone=(l.contact||'').replace(/[^0-9]/g,'');if(phone.startsWith('05'))phone='966'+phone.slice(1);var msg='مرحباً '+l.traineeName+' 🎓\n\n🔗 رابط التفعيل:\nhttps://loloo31-oss.github.io/Mizan-IQ-Student/activate.html\n\n🔑 مفتاح التفعيل:\n'+l.key+'\n\n📅 صالح حتى: '+(l.expiry||'غير محدود')+'\n📋 الدورة: '+l.course+'\n\n🌟 خالد العمري — Mizan IQ';var url=phone.length>=9?'https://wa.me/'+phone+'?text='+encodeURIComponent(msg):'https://wa.me/?text='+encodeURIComponent(msg);window.open(url,'_blank');};
-window.licEmail=function(key){
- var l=(db.licenses||[]).find(function(x){return x.key===key;});
- if(!l)return;
- var contact=l.contact||'';
- if(contact.indexOf('@')===-1){alert('لا يوجد إيميل لهذا المتدرب');return;}
- var msg='مرحباً '+l.traineeName+' 🎓\n\n🔑 مفتاح التفعيل:\n'+l.key+'\n\n📅 صالح حتى: '+(l.expiry||'غير محدود')+'\n📋 الدورة: '+l.course+'\n\n1️⃣ افتح البرنامج\n2️⃣ أدخل المفتاح\n3️⃣ اضغط تفعيل\n\n🌟 خالد العمري — Mizan IQ\nloloo31@gmail.com';
- var subject=encodeURIComponent('مفتاح تفعيل Mizan IQ — '+l.course);
- var body=encodeURIComponent(msg);
- // Open Gmail compose directly
- var gmailUrl='https://mail.google.com/mail/?view=cm&to='+encodeURIComponent(contact)+'&su='+subject+'&body='+body;
- window.open(gmailUrl,'_blank');
-};
-window.render=render;
-window.clearSession=clearSession;
-window.doLogout=function(){currentUser=null;clearSession();render();};
-window.doSwitchCo=function(){currentCompanyId=null;appState='selectCompany';render();};
-window.save=save;
-window.lang=lang;
-window.db=db;
-window.licAdminState=licAdminState;
-
+ var errMsg=errMsgs[err]||'';
+ return '<div id="licScreen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0D3B6E,#185FA5)">'
+  +'<div style="background:#fff;border-radius:20px;padding:40px;width:460px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,.25);text-align:center">'
+  +'<div style="margin-bottom:16px"><span style="font-size:36px;font-weight:800;color:#185FA5">Mizan </span><span style="font-size:36px;font-weight:900;color:#B8860B">IQ</span></div>'
+  +'<div style="font-size:12px;color:#666;margin-bottom:24px">\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0630\u064a \u064a\u0641\u0647\u0645 \u0623\u0631\u0642\u0627\u0645\u0643</div>'
+  +'<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:14px;margin-bottom:20px;font-size:13px;color:#92400E">\U0001f510 '+(isAr?'\u0647\u0630\u0647 \u0627\u0644\u0646\u0633\u062e\u0629 \u0645\u062d\u0645\u064a\u0629 \u0628\u062d\u0642\u0648\u0642 \u0627\u0644\u0645\u0644\u0643\u064a\u0629 \u0627\u0644\u0641\u0643\u0631\u064a\u0629':'This copy is protected by intellectual property rights')+'</div>'
+  +(errMsg?'<div style="background:#FEE2E2;border:1px solid #EF4444;border-radius:8px;padding:12px;margin-bottom:18px;font-size:13px;color:#B91C1C">\u26a0\ufe0f '+errMsg+'</div>':'')
+  +'<div style="text-align:right;margin-bottom:16px">'
+  +'<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px">\U0001f511 '+(isAr?'\u0645\u0641\u062a\u0627\u062d \u0627\u0644\u062a\u0641\u0639\u064a\u0644':'Activation Key')+'</label>'
+  +'<input id="licKey" placeholder="MIZAN-XXXX-XXXX-XXXX" style="width:100%;padding:12px 14px;border:2px solid #D1D5DB;border-radius:10px;font-size:14px;font-family:monospace;text-align:center;box-sizing:border-box;letter-spacing:2px;text-transform:uppercase;outline:none" oninput="this.value=this.value.toUpperCase()">'
+  +'</div>'
+  +'<button id="licBtn" style="width:100%;padding:13px;background:#185FA5;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px">\U0001f680 '+(isAr?'\u062a\u0641\u0639\u064a\u0644 \u0627\u0644\u0628\u0631\u0646\u0627\u0645\u062c':'Activate Program')+'</button>'
+  +'<div id="licMsg" style="font-size:13px;color:#6B7280;min-height:24px;margin-bottom:16px"></div>'
+  +'<div style="font-size:11px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:16px">'+(isAr?'\u062e\u0627\u0644\u062f \u0627\u0644\u0639\u0645\u0631\u064a':'Khalid Al-Omary')+' — Mizan IQ<br><a href="mailto:loloo31@gmail.com" style="color:#185FA5">loloo31@gmail.com</a></div>'
+  +'</div></div>';
+ // NOTE: this HTML used to carry its own inline <script> tag for the
+ // Activate button. Scripts inserted via .innerHTML never execute in a
+ // real browser (a well-known DOM behavior) \u2014 so that script was dead on
+ // arrival: clicking "Activate" here did nothing at all, regardless of
+ // what key was typed. The real wiring now happens in render(), the same
+ // way the login screen's buttons are wired (getElementById + addEventListener
+ // right after the innerHTML assignment).
+}
 
 function buildLogin(){
  var isAr=lang==='ar';
@@ -1019,7 +1356,6 @@ function buildLogin(){
   +'<div id="loginErr" style="color:#dc2626;font-size:12px;margin-bottom:10px;display:none">'+(isAr?'اسم المستخدم أو كلمة المرور غير صحيحة':'Invalid username or password')+'</div>'
   +'<button id="btnLogin" style="width:100%;padding:12px;background:#185FA5;color:white;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer">'+(isAr?'تسجيل الدخول':'Sign In')+'</button>'
   +'<div style="margin-top:12px;text-align:center"><a href="#" id="btnBackToCompanies" style="font-size:12px;color:var(--t2);text-decoration:none">'+(isAr?'← العودة لقائمة الشركات':'&#8592; Back to companies')+'</a></div>'
-  +'<div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center">'+(isAr?'افتراضي: admin / admin123':'Default: admin / admin123')+'</div>'
   +'<div style="margin-top:6px;font-size:11px;text-align:center"><a href="#" id="btnResetAdmin" style="color:var(--pu);text-decoration:none">'+(isAr?'نسيت كلمة المرور؟':'Forgot password? Reset admin')+'</a></div>'
   +'</div></div>';
 }
@@ -1067,6 +1403,7 @@ function buildLayout(){
   {sec:isAr?'👥 العملاء والموردون':'👥 Contacts'},
   {k:'customers',   i:'users', l:tr('lbl_customers')+' ('+db.customers.length+')'},
   {k:'suppliers',   i:'truck', l:tr('lbl_suppliers')+' ('+db.suppliers.length+')'},
+  {k:'confirmbal',  i:'doc',   l:isAr?'📄 خطاب مصادقة رصيد':'📄 Balance Confirmation Letter'},
 
   // ── Financial Reports ──────────────────────────────────────
   {sec:isAr?'📊 التقارير المالية':'📊 Financial Reports'},
@@ -1101,6 +1438,7 @@ function buildLayout(){
   {k:'users',       i:'users', l:(isAr?'المستخدمون':'Users')+' ('+db.users.filter(function(u){return u.role!=='admin';}).length+'/3)'},
   {k:'licadmin',    i:'scale', l:isAr?'🔐 لوحة تحكم التراخيص':'🔐 License Control Panel'},
   {k:'fiscalyear',  i:'doc',   l:isAr?'إغلاق السنة المالية':'Fiscal Year Close'},
+  {k:'backup',      i:'save',  l:isAr?'💾 النسخ الاحتياطي':'💾 Backup & Restore'},
 
   // ── Training ───────────────────────────────────────────────
   {sec:isAr?'🎓 التدريب المحاسبي':'🎓 Training'},
@@ -1142,7 +1480,7 @@ function buildLayout(){
    }
   });
   if(currentSec!==null)nav+='</div>';
- var pages={dashboard:pDashboard,training:pTraining,ai_settings:pAISettings,ai_bank:pAIBank,ai_analysis:pAIAnalysis,ai_cashflow:pAICashFlow,ai_forecast:pAIForecast,coa:pCOA,items:pItems,po:pPurchaseOrders,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,fiscalyear:pFiscalYear,journal:pJournal,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,equity:pEquity,workcap:pWorkCap,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,taxSales:pTaxSales,taxPurchases:pTaxPurchases,zakat:pZakat,budget:pBudget,budgetcmp:pBudgetCompare,mgmtdash:pMgmtDash,boarddash:pBoardDash,licadmin:pLicenseAdmin,customers:pCustomers,suppliers:pSuppliers,settings:pSettings,costcenters:pCostCenters,ccreport:pCCReport};
+ var pages={dashboard:pDashboard,training:pTraining,ai_settings:pAISettings,ai_bank:pAIBank,ai_analysis:pAIAnalysis,ai_cashflow:pAICashFlow,ai_forecast:pAIForecast,coa:pCOA,items:pItems,po:pPurchaseOrders,purchases:pPurchases,sales2:pSales2,stockrpt:pStockRpt,fixedassets:pFixedAssets,assetlocations:pAssetLocations,depreciation:pDepreciation,users:pUsers,fiscalyear:pFiscalYear,journal:pJournal,receipt:pReceipt,payment:pPayment,trial:pTrial,income:pIncome,balance:pBalance,equity:pEquity,workcap:pWorkCap,statement:pStatement,agingAR:pAgingAR,agingAP:pAgingAP,taxSales:pTaxSales,taxPurchases:pTaxPurchases,zakat:pZakat,budget:pBudget,budgetcmp:pBudgetCompare,mgmtdash:pMgmtDash,boarddash:pBoardDash,licadmin:pLicenseAdmin,customers:pCustomers,suppliers:pSuppliers,confirmbal:pConfirmBalance,settings:pSettings,backup:pBackup,costcenters:pCostCenters,ccreport:pCCReport};
  if(view==='fixedassets'&&tFA){return pAssetDetail();}
  var fn=pages[view]||pDashboard;
  var isAr=lang==='ar';
@@ -5306,6 +5644,69 @@ function pSuppliers(){
  db.suppliers.forEach(function(s){h+=contactCard(s,true);});
  return h+'</div></div>';
 }
+// ── BALANCE CONFIRMATION LETTER ───────────────────────────────
+// Contacts › Balance Confirmation Letter. One bilingual search box picks any
+// customer OR supplier (IDs are unique — "CUS-…"/"SUP-…" — so no separate
+// type toggle is needed); the letter is built from that contact's linked
+// account (see mContact()'s "Linked Account" field). The action-button
+// helpers (cbCurrentLetter/cbPrintPDF/cbExportWord/cbSendEmail) live up near
+// printHTML() above; this function is just the page shell.
+function pConfirmBalance(){
+ var isAr=lang==='ar';
+ var h=tb(isAr?'📄 خطاب مصادقة رصيد':'📄 Balance Confirmation Letter','');
+ h+='<div class="pg"><div class="card" style="max-width:720px">';
+ var allContacts=(db.customers||[]).map(function(c){return{id:c.id,name:c.name,nameAr:c.nameAr,isSup:false};})
+  .concat((db.suppliers||[]).map(function(s){return{id:s.id,name:s.name,nameAr:s.nameAr,isSup:true};}));
+ h+='<datalist id="cbContactDL">'+allContacts.map(function(c){
+   var typeLbl=isAr?(c.isSup?'مورد':'عميل'):(c.isSup?'Supplier':'Customer');
+   return '<option value="'+c.id+'">'+c.id+' | '+(c.name||'')+(c.nameAr?' | '+c.nameAr:'')+' ('+typeLbl+')</option>';
+  }).join('')+'</datalist>';
+ var curName='',curInfo='';
+ if(cbState.contactId){
+  var cur0=findContactById(cbState.contactId);
+  if(cur0){
+   curName=cur0.id+' | '+(cur0.name||'')+(cur0.nameAr?' | '+cur0.nameAr:'');
+   var typeLbl0=isAr?(cur0.__isSup?'مورد':'عميل'):(cur0.__isSup?'Supplier':'Customer');
+   curInfo='<span style="color:var(--gn)">✅ '+cur0.id+' - '+(cur0.name||'')+(cur0.nameAr?' | '+cur0.nameAr:'')+' ('+typeLbl0+')</span>';
+  }
+ }
+ h+=fld(isAr?'ابحث عن العميل / المورد (عربى أو انجليزى)':'Search Customer / Supplier (Arabic or English)',
+  '<input id="cb-contact-search" list="cbContactDL" value="'+curName+'" autocomplete="off"'
+  +' placeholder="'+(isAr?'اكتب اسم أو رقم الحساب...':'Type name or account ID...')+'"'
+  +' style="width:100%;padding:8px 10px;border:1px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--tx)">'
+  +'<input type="hidden" id="cb-contact-resolved" value="'+(cbState.contactId||'')+'">'
+  +'<div id="cb-contact-info" style="font-size:11px;color:var(--t2);margin-top:4px">'+curInfo+'</div>');
+ h+='<div style="margin-top:8px"><button class="btn bp" data-action="cbGenerate">'+(isAr?'📄 توليد الخطاب':'📄 Generate Letter')+'</button></div>';
+ h+='</div>';
+
+ if(cbState.contactId){
+  var contact=findContactById(cbState.contactId);
+  if(!contact){
+   h+='<div class="card" style="max-width:720px"><div class="es">'+(isAr?'⚠️ لم يتم العثور على هذا الحساب':'⚠️ Contact not found')+'</div></div>';
+  } else if(!contact.linkedAccId||!(db.accounts||[]).find(function(a){return a.id===contact.linkedAccId;})){
+   // Uses cbState.contactId (already known) rather than a data-id attribute
+   // — window.xAction only receives the action name, not the clicked
+   // element, so cbOpenContact below resolves the contact itself.
+   h+='<div class="card" style="max-width:720px"><div class="es">'
+    +(isAr?'⚠️ لا يوجد حساب مرتبط بهذا '+(contact.__isSup?'المورد':'العميل')+' بعد — لا يمكن حساب الرصيد بدون ربط حساب من كشف الحسابات.':'⚠️ This '+(contact.__isSup?'supplier':'customer')+' has no linked account yet — a balance can\'t be computed without one.')
+    +'<div style="margin-top:10px"><button class="btn bdr bsm" data-action="cbOpenContact">'+(isAr?'فتح بطاقة الحساب لربطه':'Open account card to link one')+'</button></div>'
+    +'</div></div>';
+  } else {
+   var acc=(db.accounts||[]).find(function(a){return a.id===contact.linkedAccId;});
+   var bodyHtml=confirmLetterBodyHtml(contact,acc,isAr);
+   h+='<div class="card" style="max-width:720px"><div class="ct">'+(isAr?'معاينة الخطاب':'Letter Preview')+'</div>'
+    +'<div style="border:1px solid var(--bd2);border-radius:var(--r);padding:18px;background:#fff;color:#111">'+bodyHtml+'</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
+    +'<button class="btn bp" data-action="cbPrintPDF">🖨️ '+(isAr?'معاينة / طباعة (PDF)':'Preview / Print (PDF)')+'</button>'
+    +'<button class="btn bdr" data-action="cbExportWord">📝 '+(isAr?'تصدير Word':'Export Word')+'</button>'
+    +'<button class="btn bdr" data-action="cbSendEmail"'+(!contact.email?' style="opacity:.5" title="'+(isAr?'لا يوجد بريد إلكتروني مسجل':'No email on file')+'"':'')+'>📧 '+(isAr?'إرسال بالبريد':'Send by Email')+'</button>'
+    +'</div>'
+    +(!contact.email?'<div style="font-size:11px;color:var(--t3);margin-top:8px">'+(isAr?'💡 لتفعيل زر الإرسال، أضِف بريدًا إلكترونيًا لهذا الحساب من بطاقته.':'💡 To enable Send by Email, add an email to this contact\'s card.')+'</div>':'')
+    +'</div>';
+  }
+ }
+ return h;
+}
 // ── LICENSE ADMIN PANEL ───────────────────────────────────────
 function pLicenseAdmin(){
  var isAr=lang==='ar';
@@ -5330,20 +5731,21 @@ function pLicenseAdmin(){
    +'<div class="ct" style="color:#185FA5">&#x2795; '+(isAr?'إنشاء ترخيص جديد':'New License')+'</div>'
    +'<div class="fr2">'
    +fld(isAr?'اسم المتدرب *':'Trainee Name *','<input id="lic-name" placeholder="'+(isAr?'الاسم الكامل':'Full name')+'" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px">')
-   +fld(isAr?'الجوال/الإيميل':'Phone/Email','<input id="lic-contact" placeholder="0512345678" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px">')
+   +fld(isAr?'رقم الجوال (واتساب)':'Phone (WhatsApp)','<input id="lic-phone" placeholder="'+(isAr?'سعودي: 0512345678 — دولي: 971501234567':'Saudi: 0512345678 — Intl: 971501234567')+'" title="'+(isAr?'للأرقام السعودية اكتب الرقم بصفر فى البداية. للأرقام الدولية اكتب مفتاح الدولة بدون صفر فى البداية.':'For Saudi numbers, type with a leading 0. For international numbers, type the country code with no leading 0.')+'" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px">')
    +'</div>'
    +'<div class="fr2">'
+   +fld(isAr?'الإيميل':'Email','<input id="lic-email" type="email" placeholder="name@example.com" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px">')
    +fld(isAr?'اسم الدورة':'Course','<select id="lic-course" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px"><option>دورة محاسبة - مستوى أول</option><option>دورة محاسبة - مستوى ثاني</option><option>دورة Mizan IQ الشاملة</option><option>دورة ZATCA</option><option>دورة خاصة</option></select>')
-   +fld(isAr?'مدة الترخيص':'Duration','<select id="lic-months" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px"><option value="6">6 شهور</option><option value="12" selected>12 شهر</option><option value="24">24 شهر</option><option value="0">غير محدود</option></select>')
    +'</div>'
    +'<div class="fr2">'
+   +fld(isAr?'مدة الترخيص':'Duration','<select id="lic-months" onchange="window.licRegenKey()" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px"><option value="15d">15 يوم</option><option value="6m">6 شهور</option><option value="12m" selected>12 شهر</option><option value="24m">24 شهر</option><option value="0">غير محدود</option></select>')
    +fld(isAr?'السعر (ر.س)':'Price','<input id="lic-price" type="number" value="500" style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--sf);color:var(--tx);font-size:13px">')
-   +fld(isAr?'المفتاح':'Key','<input id="lic-key" value="'+gk+'" readonly style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg);color:#185FA5;font-family:monospace;font-size:11px;font-weight:700">')
    +'</div>'
+   +fld(isAr?'المفتاح':'Key','<input id="lic-key" value="'+gk+'" readonly style="width:100%;padding:8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg);color:#185FA5;font-family:monospace;font-size:11px;font-weight:700">')
    +'<div style="display:flex;gap:8px;margin-top:10px">'
    +'<button class="btn bp" style="background:#0F6E56;border-color:#0F6E56" onclick="window.doLicSave()">💾 '+(isAr?'حفظ وإرسال':'Save & Send')+'</button>'
    +'<button class="btn" onclick="window.licCancel()">✖ '+(isAr?'إلغاء':'Cancel')+'</button>'
-   +'<button class="btn" onclick="(function(){var g=window.generateLicenseKey(\'\',\'\',12);var k=document.getElementById(\'lic-key\');if(k)k.value=g.key;})()" style="margin-right:auto">🔄 '+(isAr?'مفتاح جديد':'New Key')+'</button>'
+   +'<button class="btn" onclick="window.licRegenKey()" style="margin-right:auto">🔄 '+(isAr?'مفتاح جديد':'New Key')+'</button>'
    +'</div></div>';
  }
 
@@ -5362,7 +5764,7 @@ function pLicenseAdmin(){
    var sc=isAct?'var(--gn)':isExp?'var(--rd)':'#B45309';
    var sl=isAct?(isAr?'نشط':'Active'):isExp?(isAr?'منتهي':'Expired'):(isAr?'موقوف':'Suspended');
    h+='<tr>'
-    +'<td><b>'+l.traineeName+'</b><br><small style="color:var(--t2)">'+( l.contact||'')+'<br>'+l.course+'</small></td>'
+    +'<td><b>'+l.traineeName+'</b><br><small style="color:var(--t2)">'+([l.phone,l.email].filter(Boolean).join(' · ')||l.contact||'')+'<br>'+l.course+'</small></td>'
     +'<td><span style="font-family:monospace;font-size:10px;color:#185FA5">'+l.key+'</span></td>'
     +'<td style="font-size:12px">'+(l.expiry||'غير محدود')+'</td>'
     +'<td><b style="color:'+sc+'">'+sl+'</b></td>'
@@ -5381,6 +5783,7 @@ function pLicenseAdmin(){
 
 function pSettings(){
  var co=db.company;
+ var isAr=lang==='ar';
  var curs=['SAR','USD','EUR','GBP','AED','KWD','BHD','OMR','QAR','EGP'];
  var h=tb(tr('sec_settings'),'<button class="btn bp" data-action="saveSettings">'+ic('save')+' Save Settings</button><button class="btn bdr" data-action="importCoA" style="margin-right:8px">📥 Import IFRS Chart of Accounts</button>');
  h+='<div class="pg"><div class="card" style="max-width:660px"><div class="ct">Company Information</div><div class="fg">';
@@ -5395,8 +5798,39 @@ function pSettings(){
  h+='<div class="card" style="max-width:660px"><div class="ct">Currency</div><div class="fr2">'+fld('Currency','<select id="s-curr">'+curs.map(function(c){return '<option'+(co.currency===c?' selected':'')+'>'+c+'</option>';}).join('')+'</select>')+fld('Custom Code','<input id="s-currcustom" placeholder="e.g. TRY" maxlength="5" value="'+(curs.indexOf(co.currency)===-1?co.currency||'':'')+'">');
  h+='</div></div>';
  h+='<div class="card" style="max-width:660px"><div class="ct">Company Logo</div>'+'<div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap">'+(co.logo?'<img src="'+co.logo+'" style="height:80px;max-width:180px;object-fit:contain;border:1px solid var(--bd);border-radius:var(--r);padding:6px;background:#fff">':'<div style="width:120px;height:80px;border:2px dashed var(--bd2);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:12px">No logo</div>')+'<div style="display:flex;flex-direction:column;gap:8px"><label style="font-size:12px;font-weight:600;color:var(--t2)">Upload Logo (PNG / JPG / SVG)</label>'+'<input type="file" id="logoFile" accept="image/*" style="font-size:12px;width:auto">'+(co.logo?'<button class="btn bdr bsm" id="btnDelLogo">Remove Logo</button>':'')+'<span style="font-size:11px;color:var(--t3)">Recommended: 300x100px, transparent background. Max 500KB</span>'+'</div></div></div>';
+ // Used to auto-stamp/sign generated documents (currently: the Balance
+ // Confirmation Letter — see pConfirmBalance()) instead of the user having
+ // to add them by hand to every letter.
+ h+='<div class="card" style="max-width:660px"><div class="ct">🔴 '+(isAr?'ختم الشركة':'Company Stamp')+'</div>'+'<div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap">'+(co.stamp?'<img src="'+co.stamp+'" style="height:90px;max-width:150px;object-fit:contain;border:1px solid var(--bd);border-radius:var(--r);padding:6px;background:#fff">':'<div style="width:120px;height:90px;border:2px dashed var(--bd2);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:12px">'+(isAr?'لا يوجد ختم':'No stamp')+'</div>')+'<div style="display:flex;flex-direction:column;gap:8px"><label style="font-size:12px;font-weight:600;color:var(--t2)">'+(isAr?'رفع صورة الختم (PNG بخلفية شفافة يُفضّل)':'Upload Stamp Image (transparent PNG preferred)')+'</label>'+'<input type="file" id="stampFile" accept="image/*" style="font-size:12px;width:auto">'+(co.stamp?'<button class="btn bdr bsm" id="btnDelStamp">'+(isAr?'إزالة الختم':'Remove Stamp')+'</button>':'')+'</div></div></div>';
+ h+='<div class="card" style="max-width:660px"><div class="ct">✍️ '+(isAr?'توقيع المدير المالي':'Financial Manager Signature')+'</div>'+'<div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap">'+(co.signature?'<img src="'+co.signature+'" style="height:70px;max-width:180px;object-fit:contain;border:1px solid var(--bd);border-radius:var(--r);padding:6px;background:#fff">':'<div style="width:150px;height:70px;border:2px dashed var(--bd2);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:12px">'+(isAr?'لا يوجد توقيع':'No signature')+'</div>')+'<div style="display:flex;flex-direction:column;gap:8px"><label style="font-size:12px;font-weight:600;color:var(--t2)">'+(isAr?'رفع صورة التوقيع (PNG بخلفية شفافة يُفضّل)':'Upload Signature Image (transparent PNG preferred)')+'</label>'+'<input type="file" id="signatureFile" accept="image/*" style="font-size:12px;width:auto">'+(co.signature?'<button class="btn bdr bsm" id="btnDelSignature">'+(isAr?'إزالة التوقيع':'Remove Signature')+'</button>':'')+'</div></div></div>';
  h+='<div class="card" style="max-width:660px;border:2px dashed var(--bd2)"><div class="ct">Preview</div><div style="padding:12px;background:var(--bg);border-radius:var(--r)"><strong>'+co.name+'</strong><br><span style="font-size:12px;color:var(--t2)">'+co.address+'</span><br><span style="display:inline-block;background:var(--gnb);color:var(--gn);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;margin-top:5px">VAT: '+co.vatNo+'</span> <span style="font-size:12px;color:var(--t2)">'+vatR()+'% | '+cur()+'</span></div></div>';
   return h+'</div>';
+}
+
+// Split out from pSettings() into its own nav item so it isn't buried under
+// Company/VAT/Currency fields — the whole point is that a user worried about
+// losing data can find it in one click, not scroll past unrelated settings.
+function pBackup(){
+ var isAr=lang==='ar';
+ var h=tb((isAr?'💾 النسخ الاحتياطي والاستعادة':'💾 Backup & Restore'),'');
+ h+='<div class="pg"><div class="card" style="max-width:660px">';
+ h+='<div style="font-size:13px;color:var(--t2);margin-bottom:16px;line-height:1.8">'
+  +(isAr
+   ?'بيانات البرنامج (الحسابات والقيود والفواتير والعملاء...) محفوظة فقط على هذا الجهاز/المتصفح، وليست مرفوعة لأى سيرفر. صدّر نسخة احتياطية بشكل دورى واحفظها فى مكان آمن، حتى لا تفقد بياناتك عند تغيير الجهاز أو عمل فورمات أو مسح بيانات المتصفح.'
+   :'Program data (accounts, journals, invoices, customers...) is stored only on this device/browser, not on any server. Export a backup regularly and keep it somewhere safe, so you don\'t lose your data if you change devices, reformat, or clear browser data.')
+  +'</div>';
+ var lastAt=null;
+ try{lastAt=localStorage.getItem('mizan_last_backup_at');}catch(e){}
+ h+='<div style="font-size:12px;color:var(--t3);margin-bottom:16px;padding:8px 12px;background:var(--bg);border-radius:var(--r)">'
+  +(isAr?'آخر نسخة احتياطية: ':'Last backup: ')
+  +(lastAt?'<strong style="color:var(--t2)">'+new Date(Number(lastAt)).toLocaleString(isAr?'ar-SA':'en-US')+'</strong>':(isAr?'لم يتم عمل نسخة احتياطية بعد':'No backup made yet'))
+  +'</div>';
+ h+='<div style="display:flex;gap:10px;flex-wrap:wrap">'
+  +'<button class="btn bp" data-action="exportBackup">⬇️ '+(isAr?'تصدير نسخة احتياطية':'Export Backup')+'</button>'
+  +'<label class="btn bdr" for="importBackupFile" style="cursor:pointer;margin:0;display:inline-flex;align-items:center">⬆️ '+(isAr?'استيراد نسخة احتياطية':'Import Backup')+'</label>'
+  +'<input type="file" id="importBackupFile" accept=".json,application/json" style="display:none">'
+  +'</div></div></div>';
+ return h;
 }
 
 function pFiscalYear(){
@@ -5667,59 +6101,14 @@ window.xAction=function(type){
   var ki=document.getElementById('lic-key');
   if(ki)ki.value=ng.key;return;
  }
- if(type==='licSave'){
-  var nm=(document.getElementById('lic-name')||{}).value||'';
-  if(!nm.trim()){alert(lang==='ar'?'أدخل اسم المتدرب':'Enter trainee name');return;}
-  var key2=(document.getElementById('lic-key')||{}).value||'';
-  var mo=parseInt((document.getElementById('lic-months')||{}).value||'12');
-  var exp2='';
-  if(mo>0){var d2=new Date();d2.setMonth(d2.getMonth()+mo);exp2=d2.toISOString().slice(0,10);}
-  var lic2={
-   key:key2,
-   traineeName:nm.trim(),
-   contact:((document.getElementById('lic-contact')||{}).value||'').trim(),
-   course:((document.getElementById('lic-course')||{}).value||''),
-   expiry:exp2,
-   price:parseFloat((document.getElementById('lic-price')||{}).value||'0'),
-   active:true,
-   createdAt:new Date().toISOString()
-  };
-  db.licenses=db.licenses||[];
-  db.licenses.push(lic2);
-  // Push to Firebase
-  if(typeof firebase!=='undefined'){
-   firebase.database().ref(LICENSE_DB_PATH+'/'+key2).set({
-    traineeName:lic2.traineeName,
-    course:lic2.course,
-    expiry:lic2.expiry,
-    active:true,
-    createdAt:lic2.createdAt
-   });
-  }
-  save();
-  licAdminState={showForm:false};
-  render();
-  // Auto open WhatsApp with the license info
-  setTimeout(function(){
-   var isAr2=lang==='ar';
-   var contact2=lic2.contact||'';
-   var waMsg=(isAr2?
-    'مرحباً '+lic2.traineeName+' 🎓\n\nيسعدنا تزويدك بنسختك من برنامج Mizan IQ ميزان.\n\n🔑 مفتاح التفعيل:\n'+key2+'\n\n📅 صالح حتى: '+(lic2.expiry||'غير محدود')+'\n📋 الدورة: '+lic2.course+'\n\nخطوات التفعيل:\n1️⃣ افتح البرنامج\n2️⃣ أدخل المفتاح أعلاه\n3️⃣ اضغط "تفعيل البرنامج"\n\nبالتوفيق! 🌟\nخالد العمري — Mizan IQ\nloloo31@gmail.com':
-    'Hello '+lic2.traineeName+' 🎓\n\nYour Mizan IQ license is ready!\n\n🔑 Activation Key:\n'+key2+'\n\n📅 Valid until: '+(lic2.expiry||'Unlimited')+'\n📋 Course: '+lic2.course+'\n\nActivation steps:\n1️⃣ Open the program\n2️⃣ Enter the key above\n3️⃣ Click "Activate Program"\n\nGood luck! 🌟\nKhalid Al-Omary — Mizan IQ'
-   );
-   // If contact has phone number, open direct chat; otherwise open share
-   var phone=contact2.replace(/[^0-9]/g,'');
-   if(phone.length>=9){
-    // Add country code if missing
-    if(phone.startsWith('05'))phone='966'+phone.slice(1);
-    if(phone.startsWith('5')&&phone.length===9)phone='966'+phone;
-    window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(waMsg),'_blank');
-   } else {
-    window.open('https://wa.me/?text='+encodeURIComponent(waMsg),'_blank');
-   }
-  },400);
-  return;
- }
+ // NOTE: the old 'licSave' dispatch case that used to live here was dead
+ // code — nothing in the UI ever dispatched type:'licSave' (the license
+ // form's Save button calls window.doLicSave() directly; see the
+ // "Global License Admin Functions" script near the end of the file).
+ // Removed during the 2026-09-02 cleanup: it referenced stale field ids
+ // (#lic-contact, replaced by #lic-phone/#lic-email) and wrote to Firebase
+ // via the old LICENSE_DB_PATH path with no authentication, which the
+ // real security rules would now reject anyway.
  if(type==='cancelModal'){modal=null;render();return;}
  if(type==='toggleLang'){setLang(lang==='ar'?'en':'ar');return;}
  if(type==='logout'){currentUser=null;clearSession();render();return;}
@@ -5940,6 +6329,22 @@ window.xAction=function(type){
   exportXLS(aoa4,'Sales','Sales_'+today());return;
  }
  if(type==='importCoA'){importCoA();return;}
+ if(type==='exportBackup'){exportBackup();return;}
+ if(type==='cbGenerate'){
+  var cbId=((document.getElementById('cb-contact-resolved')||{}).value||'').trim();
+  cbState.contactId=cbId;render();return;
+ }
+ if(type==='cbPrintPDF'){cbPrintPDF();return;}
+ if(type==='cbExportWord'){cbExportWord();return;}
+ if(type==='cbSendEmail'){cbSendEmail();return;}
+ if(type==='cbOpenContact'){
+  var cbContact=findContactById(cbState.contactId);
+  if(cbContact){
+   if(cbContact.__isSup){supView=(db.suppliers||[]).find(function(s){return s.id===cbContact.id;});view='suppliers';}
+   else{cusView=(db.customers||[]).find(function(c){return c.id===cbContact.id;});view='customers';}
+  }
+  render();return;
+ }
  if(type==='editOB'){modal='ob';render();return;}
  if(type==='addFA'){tFAEdit={};modal='fa';render();return;}
  if(type==='backFA'){tFA=null;view='fixedassets';render();return;}
@@ -7372,6 +7777,11 @@ function bindEvents(){
   modal=null;save();render();
  });
  // Settings
+ on1('importBackupFile','change',function(e){
+  var file=e.target.files[0];
+  if(file)importBackupFile(file);
+  e.target.value=''; // allow re-selecting the same file next time
+ });
  on1('logoFile','change',function(e){
   var file=e.target.files[0];if(!file)return;
   var reader=new FileReader();
@@ -7400,6 +7810,10 @@ function bindEvents(){
   reader.readAsDataURL(file);
  });
  on1('btnDelLogo','click',function(){if(confirm('Remove logo?')){db.company.logo='';save();render();}});
+ wireImageUploadField('stampFile','stamp',220,220);
+ wireImageUploadField('signatureFile','signature',280,120);
+ on1('btnDelStamp','click',function(){var isAr=lang==='ar';if(confirm(isAr?'إزالة ختم الشركة؟':'Remove company stamp?')){db.company.stamp='';save();render();}});
+ on1('btnDelSignature','click',function(){var isAr=lang==='ar';if(confirm(isAr?'إزالة توقيع المدير المالي؟':'Remove signature?')){db.company.signature='';save();render();}});
 
  // ── User management handlers ──────────────────────────────
  on1('btnAddUser','click',function(){
@@ -7556,91 +7970,14 @@ function bindEvents(){
   }catch(e){aiCashState.result='Error: '+e.message;}
   aiCashState.loading=false;render();
  });
- // License admin buttons
- on1('btnLicNew','click',function(){licAdminState.showForm=true;render();});
- on1('btnLicCancel','click',function(){licAdminState.showForm=false;render();});
- on1('btnRegenKey','click',function(){
-  var g=window.generateLicenseKey('','',12);
-  var ki=document.getElementById('lic-key');
-  if(ki)ki.value=g.key;
- });
- on1('btnLicSave','click',function(){
-  var isAr=lang==='ar';
-  var nm=((document.getElementById('lic-name')||{}).value||'').trim();
-  if(!nm){alert(isAr?'أدخل اسم المتدرب':'Enter trainee name');return;}
-  var key2=((document.getElementById('lic-key')||{}).value||'').trim();
-  var mo=parseInt(((document.getElementById('lic-months')||{}).value)||'12');
-  var exp2='';
-  if(mo>0){var d2=new Date();d2.setMonth(d2.getMonth()+mo);exp2=d2.toISOString().slice(0,10);}
-  var lic2={
-   key:key2,traineeName:nm,
-   contact:((document.getElementById('lic-contact')||{}).value||'').trim(),
-   course:((document.getElementById('lic-course')||{}).value||''),
-   expiry:exp2,
-   price:parseFloat(((document.getElementById('lic-price')||{}).value)||'0'),
-   active:true,createdAt:new Date().toISOString()
-  };
-  db.licenses=db.licenses||[];
-  db.licenses.push(lic2);
-  if(typeof firebase!=='undefined'){
-   firebase.database().ref(LICENSE_DB_PATH+'/'+key2).set({traineeName:lic2.traineeName,course:lic2.course,expiry:lic2.expiry,active:true,createdAt:lic2.createdAt});
-  }
-  save();
-  licAdminState.showForm=false;
-  render();
-  // Open WhatsApp
-  setTimeout(function(){
-   var phone=lic2.contact.replace(/[^0-9]/g,'');
-   if(phone.startsWith('05'))phone='966'+phone.slice(1);
-   else if(phone.startsWith('5')&&phone.length===9)phone='966'+phone;
-   var msg=(isAr?'مرحباً '+nm+' 🎓\n\nيسعدنا تزويدك بنسختك من برنامج Mizan IQ.\n\n🔑 مفتاح التفعيل:\n'+key2+'\n\n📅 صالح حتى: '+(exp2||'غير محدود')+'\n📋 الدورة: '+lic2.course+'\n\nخطوات التفعيل:\n1️⃣ افتح البرنامج\n2️⃣ أدخل المفتاح\n3️⃣ اضغط تفعيل\n\n🌟 خالد العمري — Mizan IQ':'Hello '+nm+' 🎓\n\nYour Mizan IQ activation key:\n\n🔑 '+key2+'\n📅 Valid until: '+(exp2||'Unlimited')+'\n📋 Course: '+lic2.course+'\n\nSteps:\n1️⃣ Open program\n2️⃣ Enter the key\n3️⃣ Click Activate\n\n🌟 Khalid Al-Omary — Mizan IQ');
-   var url=phone.length>=9?'https://wa.me/'+phone+'?text='+encodeURIComponent(msg):'https://wa.me/?text='+encodeURIComponent(msg);
-   window.open(url,'_blank');
-  },500);
- });
-
- // License management table handlers
- on('[data-lic-suspend]','click',function(el){
-  var key=el.dataset.licSuspend;
-  var lic=(db.licenses||[]).find(function(l){return l.key===key;});
-  if(lic&&confirm(lang==='ar'?'إيقاف هذا الترخيص؟':'Suspend this license?')){
-   lic.active=false;
-   if(typeof firebase!=='undefined')firebase.database().ref(LICENSE_DB_PATH+'/'+key+'/active').set(false);
-   save();render();
-  }
- });
- on('[data-lic-activate]','click',function(el){
-  var key=el.dataset.licActivate;
-  var lic=(db.licenses||[]).find(function(l){return l.key===key;});
-  if(lic){
-   lic.active=true;
-   if(typeof firebase!=='undefined')firebase.database().ref(LICENSE_DB_PATH+'/'+key+'/active').set(true);
-   save();render();
-  }
- });
- on('[data-lic-renew]','click',function(el){
-  var key=el.dataset.licRenew;
-  var lic=(db.licenses||[]).find(function(l){return l.key===key;});
-  if(lic){
-   var d=new Date(lic.expiry&&new Date(lic.expiry)>new Date()?lic.expiry:new Date());
-   d.setFullYear(d.getFullYear()+1);
-   lic.expiry=d.toISOString().slice(0,10);
-   lic.active=true;
-   if(typeof firebase!=='undefined')firebase.database().ref(LICENSE_DB_PATH+'/'+key).update({expiry:lic.expiry,active:true});
-   save();render();
-   alert('✅ '+(lang==='ar'?'تم التجديد حتى: ':'Renewed until: ')+lic.expiry);
-  }
- });
- on('[data-lic-whatsapp]','click',function(el){
-  var key=el.dataset.licWhatsapp;
-  var lic=(db.licenses||[]).find(function(l){return l.key===key;});
-  if(!lic)return;
-  var msg=(lang==='ar'?
-   'مرحباً '+lic.traineeName+'،\n\nيسعدنا تزويدك بنسختك من برنامج Mizan IQ.\n\n🔑 مفتاح التفعيل:\n'+lic.key+'\n\n📅 صالح حتى: '+lic.expiry+'\n\n📋 الدورة: '+lic.course+'\n\nخطوات التفعيل:\n1. افتح البرنامج\n2. أدخل المفتاح أعلاه\n3. اضغط تفعيل\n\nبالتوفيق! 🎓\nخالد العمري — Mizan IQ':
-   'Hello '+lic.traineeName+',\n\nYour Mizan IQ license:\n\n🔑 Key: '+lic.key+'\n📅 Valid until: '+lic.expiry+'\n📋 Course: '+lic.course+'\n\nActivation steps:\n1. Open the program\n2. Enter the key above\n3. Click Activate\n\nBest of luck! 🎓\nKhalid Al-Omary — Mizan IQ');
-  var wa='https://wa.me/?text='+encodeURIComponent(msg);
-  window.open(wa,'_blank');
- });
+ // License admin buttons — handled entirely by the global onclick="window.doLicSave()"
+ // / window.licWA() / window.licEmail() etc. functions (outside the IIFE, near
+ // the end of the file). A duplicate set of handlers used to be re-bound here
+ // via on()/on1() on every render(), attaching a SECOND click listener to the
+ // same buttons (they carry both onclick="" and data-lic-* attributes) with an
+ // old, stale message template (missing the program link, and for WhatsApp,
+ // missing the phone number too) — that's what was opening a second WhatsApp
+ // window with the wrong text. Removed to leave a single source of truth.
 
  // ── AI Analysis type selector ─────────────────────────────
  on('[data-anatype]','click',function(el){
@@ -7897,6 +8234,28 @@ function bindEvents(){
   } else {
    if(hidden)hidden.value='';
    if(info)info.innerHTML='<span style="color:var(--t2)">'+(lang==='ar'?'اكتب لبحث عن حساب...':'Type to search...')+'</span>';
+  }
+ });
+ // Balance Confirmation Letter's contact search — same resolve-on-input
+ // pattern as #c-acc-search above, but matching against customers AND
+ // suppliers together (unique "CUS-…"/"SUP-…" IDs let one box search both).
+ on('#cb-contact-search','input',function(el){
+  var val=el.value.trim();
+  var hidden=document.getElementById('cb-contact-resolved');
+  var info=document.getElementById('cb-contact-info');
+  var isAr2=lang==='ar';
+  if(!val){if(hidden)hidden.value='';if(info)info.textContent='';return;}
+  var allC=(db.customers||[]).map(function(c){return{id:c.id,name:c.name,nameAr:c.nameAr,isSup:false};})
+   .concat((db.suppliers||[]).map(function(s){return{id:s.id,name:s.name,nameAr:s.nameAr,isSup:true};}));
+  var found=allC.find(function(c){return c.id===val||val.startsWith(c.id+'|')||val.startsWith(c.id+' |');});
+  if(!found)found=allC.find(function(c){return val.indexOf(c.id)>-1;});
+  if(found){
+   if(hidden)hidden.value=found.id;
+   var typeLbl=isAr2?(found.isSup?'مورد':'عميل'):(found.isSup?'Supplier':'Customer');
+   if(info)info.innerHTML='<span style="color:var(--gn)">✅ '+found.id+' - '+(found.name||'')+(found.nameAr?' | '+found.nameAr:'')+' ('+typeLbl+')</span>';
+  } else {
+   if(hidden)hidden.value='';
+   if(info)info.innerHTML='<span style="color:var(--t2)">'+(isAr2?'اكتب للبحث عن عميل أو مورد...':'Type to search a customer or supplier...')+'</span>';
   }
  });
 
@@ -8291,9 +8650,38 @@ document.getElementById('app').innerHTML = '<div style="display:flex;align-items
 var skipNextRemote=false;
 document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
 document.documentElement.setAttribute('lang',lang);
+// Expose to the license-panel handlers below, which live in separate
+// <script> tags outside this IIFE and can't see these names directly.
+window.render=render;
+window.save=save;
 loadDB().then(function(loaded){
  db=loaded;
  render();
+ // Restore a trainee's session automatically if Firebase already has one
+ // persisted for this browser (so they don't have to log in every single
+ // time they open the app — this also doubles as a live re-check: if the
+ // admin suspended this trainee, or their license has since expired, they
+ // get signed out here instead of silently staying "logged in".)
+ if(window.mizanAuth){
+  window.mizanAuth.onAuthStateChanged(function(fbUser){
+   if(currentUser||!fbUser||fbUser.email===MIZAN_SERVICE_EMAIL)return;
+   window.mizanUsersRef.child(fbUser.uid).once('value').then(function(snap){
+    var prof=snap.val();
+    if(!prof||!prof.licenseKey)return;
+    return window.mizanLicensesRef.child(prof.licenseKey).once('value').then(function(licSnap){
+     var lic=licSnap.val();
+     if(!lic||lic.active===false||(lic.expiry&&new Date(lic.expiry)<new Date())){
+      window.mizanAuth.signOut().catch(function(){});
+      return;
+     }
+     currentUser={id:fbUser.uid,username:prof.username,name:prof.username,role:'user',active:true,perms:{}};
+     window.mizanCurrentTrainee={uid:fbUser.uid,licenseKey:prof.licenseKey};
+     try{localStorage.setItem('mizan_license',JSON.stringify({key:prof.licenseKey,valid:true,firebaseManaged:true,expiry:lic.expiry||'',activatedAt:new Date().toISOString()}));}catch(e4){}
+     render();
+    });
+   }).catch(function(){});
+  });
+ }
  // Listen for remote changes (sync across devices)
  if(HAS_CLOUD&&fbRef){
   fbRef.on('value',function(snap){
@@ -8314,17 +8702,99 @@ loadDB().then(function(loaded){
 
 </script>
 <script>
+// ── Global License Functions ──────────────────────────────────
+window.activateLicense=function(key){
+ var msg=document.getElementById('licMsg');
+ var isAr=window.lang==='ar';
+ if(!key||!/^MIZAN-[A-Z0-9]{4,8}-[A-Z0-9]{4,8}-[A-Z0-9]{4,8}$/.test(key)){
+  if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'صيغة المفتاح غير صحيحة':'Invalid key format')+'</span>';
+  return;
+ }
+ if(msg)msg.innerHTML='<span style="color:#6B7280">'+(isAr?'جاري التحقق...':'Verifying...')+'</span>';
+ // Try Firebase first
+ var fbAvail=typeof firebase!=='undefined'&&firebase.database;
+ if(fbAvail){
+  try{
+   firebase.database().ref('mizan_licenses/'+key).once('value').then(function(snap){
+    var d=snap.val();
+    if(!d){
+     if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'المفتاح غير موجود':'Key not found')+'</span>';
+     return;
+    }
+    if(d.active===false){
+     if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'هذا المفتاح معطل. تواصل مع المدرب':'Key disabled. Contact trainer')+'</span>';
+     return;
+    }
+    if(d.expiry&&new Date(d.expiry)<new Date()){
+     if(msg)msg.innerHTML='<span style="color:#EF4444">❌ '+(isAr?'انتهت صلاحية المفتاح':'Key expired')+'</span>';
+     return;
+    }
+    var lic={key:key,traineeName:d.traineeName||'',course:d.course||'',expiry:d.expiry||'',activatedAt:new Date().toISOString()};
+    localStorage.setItem('mizan_license',JSON.stringify(lic));
+    window.licenseState={checked:true,valid:true,data:lic,error:''};
+    if(msg)msg.innerHTML='<span style="color:#059669">✅ '+(isAr?'تم التفعيل! مرحباً '+lic.traineeName:'Activated! Welcome '+lic.traineeName)+'</span>';
+    setTimeout(function(){if(window.render)window.render();},1200);
+   }).catch(function(){
+    // Offline — accept key
+    var lic={key:key,traineeName:'',course:'',expiry:'',activatedAt:new Date().toISOString(),offline:true};
+    localStorage.setItem('mizan_license',JSON.stringify(lic));
+    window.licenseState={checked:true,valid:true,data:lic,error:''};
+    if(msg)msg.innerHTML='<span style="color:#059669">✅ '+(isAr?'تم التفعيل':'Activated')+'</span>';
+    setTimeout(function(){if(window.render)window.render();},1000);
+   });
+  }catch(e){
+   var lic={key:key,traineeName:'',course:'',expiry:'',activatedAt:new Date().toISOString(),offline:true};
+   localStorage.setItem('mizan_license',JSON.stringify(lic));
+   window.licenseState={checked:true,valid:true,data:lic,error:''};
+   setTimeout(function(){if(window.render)window.render();},500);
+  }
+ } else {
+  // No Firebase — accept any valid format key
+  var lic={key:key,traineeName:'',course:'',expiry:'',activatedAt:new Date().toISOString(),offline:true};
+  localStorage.setItem('mizan_license',JSON.stringify(lic));
+  window.licenseState={checked:true,valid:true,data:lic,error:''};
+  if(msg)msg.innerHTML='<span style="color:#059669">✅ '+(isAr?'تم التفعيل':'Activated')+'</span>';
+  setTimeout(function(){if(window.render)window.render();},1000);
+ }
+};
+</script>
+<script>
 // ── Global License Admin Functions (outside IIFE) ─────────────
+var PROGRAM_URL='https://loloo31-oss.github.io/Mizan-IQ-Student/activate.html';
+// Turns whatever the admin typed into a WhatsApp-ready international
+// number. IMPORTANT: this only auto-adds Saudi Arabia's country code
+// (966) for a number typed in EXACT Saudi local mobile format (05 + 8
+// digits = 10 digits total) — that used to be a much looser check
+// ("starts with 05", or "starts with 5 and is 9 digits") that also
+// matched other Gulf countries' own local mobile formats (e.g. the UAE's
+// 05X XXX XXXX is the same length/shape), silently corrupting those into
+// a wrong Saudi number. Anything else — a number already starting with +
+// or 00, or typed with its own country code and no leading 0 — is sent
+// through untouched, so trainers should type non-Saudi numbers WITH their
+// country code (e.g. 971501234567 for the UAE, no leading zero).
+function formatWaPhone(raw){
+ var p=String(raw||'').trim();
+ if(p.charAt(0)==='+')p=p.slice(1);
+ p=p.replace(/[^0-9]/g,'');
+ if(p.indexOf('00')===0)p=p.slice(2);
+ else if(p.indexOf('05')===0&&p.length===10)p='966'+p.slice(1);
+ return p;
+}
 window.doLicSave=function(){
  var isAr=window.lang==='ar';
  var nm=((document.getElementById('lic-name')||{}).value||'').trim();
  if(!nm){alert(isAr?'أدخل اسم المتدرب':'Enter trainee name');return;}
  var key2=((document.getElementById('lic-key')||{}).value||'').trim();
- var mo=parseInt(((document.getElementById('lic-months')||{}).value)||'12');
- var exp2='';
- if(mo>0){var d2=new Date();d2.setMonth(d2.getMonth()+mo);exp2=d2.toISOString().slice(0,10);}
+ // Derive the expiry straight from the generated key's own embedded date
+ // segment (MIZAN-partA-partB-YYYYMMDD-checksum), instead of recomputing
+ // it separately from the duration dropdown — this guarantees the admin's
+ // bookkeeping record always matches what's actually baked into the key,
+ // whatever duration unit (days/months) was used to generate it.
+ var expCode2=(key2.split('-')[3]||'00000000');
+ var exp2=(expCode2==='00000000')?'':(expCode2.slice(0,4)+'-'+expCode2.slice(4,6)+'-'+expCode2.slice(6,8));
  var lic2={key:key2,traineeName:nm,
-  contact:((document.getElementById('lic-contact')||{}).value||'').trim(),
+  phone:((document.getElementById('lic-phone')||{}).value||'').trim(),
+  email:((document.getElementById('lic-email')||{}).value||'').trim(),
   course:((document.getElementById('lic-course')||{}).value||''),
   expiry:exp2,
   price:parseFloat(((document.getElementById('lic-price')||{}).value)||'0'),
@@ -8335,28 +8805,139 @@ window.doLicSave=function(){
  window.save();
  window.licAdminState.showForm=false;
  window.render();
- setTimeout(function(){
-  var phone=lic2.contact.replace(/[^0-9]/g,'');
-  if(phone.startsWith('05'))phone='966'+phone.slice(1);
-  else if(phone.startsWith('5')&&phone.length===9)phone='966'+phone;
-  var msg='مرحباً '+nm+' 🎓\n\nنسختك من برنامج Mizan IQ جاهزة!\n\n🔗 رابط التفعيل:\nhttps://loloo31-oss.github.io/Mizan-IQ-Student/activate.html\n\n🔑 مفتاح التفعيل:\n'+key2+'\n\n📅 صالح حتى: '+(exp2||'غير محدود')+'\n📋 الدورة: '+lic2.course+'\n\nخطوات التفعيل:\n1️⃣ افتح رابط التفعيل أعلاه\n2️⃣ أدخل المفتاح\n3️⃣ اختر اسم مستخدم وكلمة مرور\n4️⃣ اضغط تفعيل البرنامج\n\n🌟 خالد العمري — Mizan IQ\nloloo31@gmail.com';
-  // WhatsApp
-  var waUrl=phone.length>=9?'https://wa.me/'+phone+'?text='+encodeURIComponent(msg):'https://wa.me/?text='+encodeURIComponent(msg);
+ // Publish the same license to the real backend (Realtime Database) so a
+ // trainee can actually activate it, and so Suspend/Renew below take real,
+ // immediate effect instead of only updating this admin's own local table.
+ if(window.ensureServiceAdminAuth&&window.mizanLicensesRef){
+  window.ensureServiceAdminAuth().then(function(){
+   return window.mizanLicensesRef.child(key2).set({
+    traineeName:nm,phone:lic2.phone,email:lic2.email,course:lic2.course,
+    expiry:exp2,active:true,createdAt:lic2.createdAt
+   });
+  }).catch(function(err){
+   console.error('Failed to publish license to Firebase',err);
+   alert((isAr?'تحذير: تم الحفظ محليًا لكن فشل رفع الترخيص للخادم — قد لا يستطيع المتدرب التفعيل. التفاصيل: ':'Warning: saved locally but publishing the license to the server failed — the trainee may not be able to activate. Details: ')+(err&&err.message?err.message:err));
+  });
+ }
+ // Open WhatsApp / Gmail SYNCHRONOUSLY, right here in the click handler —
+ // not inside a setTimeout. Browsers only allow window.open() to bypass
+ // the popup blocker when it happens as a direct, immediate result of a
+ // user gesture (the click on "Save & Send"); delaying it even by a few
+ // hundred milliseconds loses that "user activation" and the tab either
+ // gets blocked outright or opens blank/broken — which is exactly the bug
+ // this replaces.
+ var msg=licMsgFor(lic2);
+ // WhatsApp — only if a phone number was entered.
+ if(lic2.phone){
+  var phone=formatWaPhone(lic2.phone);
+  // web.whatsapp.com/send opens straight into the chat in an ALREADY-
+  // authenticated browser tab — wa.me instead bounces through an extra
+  // api.whatsapp.com landing page ("Continue to WhatsApp Web") whose
+  // click-through navigation was landing on a blank/stuck page for some
+  // users. Going directly to web.whatsapp.com skips that hop entirely.
+  var waUrl=phone.length>=9?'https://web.whatsapp.com/send?phone='+phone+'&text='+encodeURIComponent(msg):'https://wa.me/?text='+encodeURIComponent(msg);
   window.open(waUrl,'_blank');
-  // Email via mailto (opens default mail app)
-  var contact=lic2.contact||'';
-  if(contact.indexOf('@')>-1){
-   var subject=encodeURIComponent('مفتاح تفعيل برنامج Mizan IQ — '+lic2.course);
-   var body=encodeURIComponent(msg);
-   setTimeout(function(){
-    window.location.href='mailto:'+contact+'?subject='+subject+'&body='+body;
-   },800);
-  }
- },500);
+ }
+ // Email via Gmail's web compose window (opens directly in the browser
+ // instead of going through mailto:, which is controlled by the OS's
+ // default mail-handler setting and was opening Edge/Outlook instead of
+ // Gmail) — only if an email was entered. Independent of the phone/
+ // WhatsApp step above: both can fire, either can fire alone, and both
+ // fire in the same synchronous click for the same reason as above.
+ if(lic2.email){
+  var subject=encodeURIComponent((isAr?'مفتاح تفعيل برنامج Mizan IQ — ':'Mizan IQ activation key — ')+lic2.course);
+  window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(lic2.email)+'&su='+subject+'&body='+encodeURIComponent(msg),'_blank');
+ }
 };
 window.licNew=function(){if(window.licAdminState)window.licAdminState.showForm=!window.licAdminState.showForm;if(window.render)window.render();};
 window.licCancel=function(){if(window.licAdminState)window.licAdminState.showForm=false;if(window.render)window.render();};
-window.licRegenKey=function(){if(window.generateLicenseKey){var g=window.generateLicenseKey('','',12);var k=document.getElementById('lic-key');if(k)k.value=g.key;}};
+window.licRegenKey=function(){
+ if(!window.generateLicenseKey)return;
+ var moEl=document.getElementById('lic-months');
+ var mo=moEl?moEl.value:'12';
+ var g=window.generateLicenseKey('','',mo);
+ var k=document.getElementById('lic-key');
+ if(k)k.value=g.key;
+};
+
+// These were referenced by the license table buttons but never defined —
+// added so ⏸/▶/🔄/📱/📧 actually work. Suspend/Activate/Renew below update
+// this admin's own local table AND push the same change to the real
+// /licenses/{key} record on the server (via licPublish), so they take
+// real, immediate effect on the trainee's copy too — not just here.
+function licFind(key){return (window.db&&window.db.licenses||[]).find(function(x){return x.key===key;});}
+function licMsgFor(l){
+ var isAr=window.lang==='ar';
+ return isAr?
+  ('مرحباً '+l.traineeName+' 🎓\n\nنسختك من برنامج Mizan IQ جاهزة!\n\n🔑 مفتاح التفعيل:\n'+l.key+'\n\n📅 صالح حتى: '+(l.expiry||'غير محدود')+'\n📋 الدورة: '+l.course+'\n\nخطوات التفعيل:\n1️⃣ افتح رابط البرنامج:\n'+PROGRAM_URL+'\n2️⃣ أدخل المفتاح\n3️⃣ اضغط تفعيل البرنامج\n\n🌟 خالد العمري — Mizan IQ\nloloo31@gmail.com'):
+  ('Hello '+l.traineeName+' 🎓\n\nYour Mizan IQ license is ready!\n\n🔑 Activation Key:\n'+l.key+'\n\n📅 Valid until: '+(l.expiry||'Unlimited')+'\n📋 Course: '+l.course+'\n\nActivation steps:\n1️⃣ Open the program link:\n'+PROGRAM_URL+'\n2️⃣ Enter the key above\n3️⃣ Click "Activate Program"\n\nGood luck! 🌟\nKhalid Al-Omary — Mizan IQ');
+}
+// Pushes a partial update to the real /licenses/{key} record (after
+// signing in as the fixed service account) so Suspend/Activate/Renew
+// take effect immediately for the trainee too, not just in this admin's
+// own local table. Failures are logged + surfaced but don't block the
+// local update from applying.
+function licPublish(key,patch){
+ if(!window.ensureServiceAdminAuth||!window.mizanLicensesRef)return;
+ window.ensureServiceAdminAuth().then(function(){
+  return window.mizanLicensesRef.child(key).update(patch);
+ }).catch(function(err){
+  console.error('Failed to sync license change to Firebase',err);
+  var isAr=window.lang==='ar';
+  alert((isAr?'تحذير: التغيير حُفظ محليًا فقط ولم يصل للخادم. التفاصيل: ':'Warning: this change saved locally only and did not reach the server. Details: ')+(err&&err.message?err.message:err));
+ });
+}
+window.licSuspend=function(key){
+ var l=licFind(key);if(!l)return;
+ l.active=false;
+ if(window.save)window.save();
+ if(window.render)window.render();
+ licPublish(key,{active:false});
+};
+window.licActivate=function(key){
+ var l=licFind(key);if(!l)return;
+ l.active=true;
+ if(window.save)window.save();
+ if(window.render)window.render();
+ licPublish(key,{active:true});
+};
+window.licRenew=function(key){
+ var l=licFind(key);if(!l)return;
+ var isAr=window.lang==='ar';
+ var mo=parseInt(prompt(isAr?'كم شهر تريد تمديد الترخيص؟':'Extend by how many months?','12')||'0',10);
+ if(!mo)return;
+ var base=(l.expiry&&new Date(l.expiry)>new Date())?new Date(l.expiry):new Date();
+ base.setMonth(base.getMonth()+mo);
+ l.expiry=base.toISOString().slice(0,10);
+ l.active=true;
+ if(window.save)window.save();
+ if(window.render)window.render();
+ licPublish(key,{expiry:l.expiry,active:true});
+};
+window.licWA=function(key){
+ var l=licFind(key);if(!l)return;
+ var isAr=window.lang==='ar';
+ // Fall back to the old single "contact" field for licenses issued before
+ // the phone/email split, so resending an old license still works.
+ var phoneRaw=l.phone||(l.contact&&l.contact.indexOf('@')===-1?l.contact:'')||'';
+ if(!phoneRaw){alert(isAr?'لا يوجد رقم جوال مسجل لهذا المتدرب':'No phone number on file for this trainee');return;}
+ var phone=formatWaPhone(phoneRaw);
+ // web.whatsapp.com/send opens straight into the chat (see the matching
+ // comment in doLicSave above for why this replaces wa.me here too).
+ var waUrl=phone.length>=9?('https://web.whatsapp.com/send?phone='+phone+'&text='+encodeURIComponent(licMsgFor(l))):('https://wa.me/?text='+encodeURIComponent(licMsgFor(l)));
+ window.open(waUrl,'_blank');
+};
+window.licEmail=function(key){
+ var l=licFind(key);if(!l)return;
+ var isAr=window.lang==='ar';
+ // Same backward-compat fallback as licWA above.
+ var email=l.email||(l.contact&&l.contact.indexOf('@')>-1?l.contact:'')||'';
+ if(!email){alert(isAr?'لا يوجد إيميل مسجل لهذا المتدرب':'No email on file for this trainee');return;}
+ var subject=encodeURIComponent((isAr?'مفتاح تفعيل برنامج Mizan IQ — ':'Mizan IQ activation key — ')+l.course);
+ // Gmail web-compose link instead of mailto: (mailto: is OS-default-handler
+ // controlled and was opening Edge/Outlook instead of Gmail).
+ window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+subject+'&body='+encodeURIComponent(licMsgFor(l)),'_blank');
+};
 </script>
 </body>
 </html>
