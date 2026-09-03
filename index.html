@@ -653,6 +653,45 @@ function wireImageUploadField(inputId,dbField,maxW,maxH){
   reader.readAsDataURL(file);
  });
 }
+// Retroactively fixes any stamp/signature that was already stored small
+// (uploaded before the upscale-on-upload fix above existed) — re-uploading
+// isn't the only way to end up with one; it can also arrive via a restored
+// backup. Runs once at boot (see loadDB().then below); decoding an image
+// is async, so this can't live inside normalizeDB(). Safe to call on every
+// boot: an image already at a good size is left untouched (no save/render
+// triggered), so this only ever does real work exactly once per image.
+function upgradeSmallCompanyImages(){
+ var fields=[['stamp',220,220],['signature',280,120]];
+ var pending=fields.length,changed=false;
+ function finish(){
+  pending--;
+  if(pending===0&&changed){save();render();}
+ }
+ fields.forEach(function(f){
+  var key=f[0],maxW=f[1],maxH=f[2];
+  var src=db.company[key];
+  if(!src){finish();return;}
+  var img=new Image();
+  img.onload=function(){
+   var w=img.width,h=img.height;
+   var scale=Math.min(maxW/w,maxH/h,8);
+   // Already a good size (or the source is too large to need help) --
+   // nothing to do. The 1.15 margin avoids pointlessly re-encoding an
+   // image that's already essentially at target size.
+   if(scale<=1.15||w<1||h<1){finish();return;}
+   var nw=Math.max(1,Math.round(w*scale)),nh=Math.max(1,Math.round(h*scale));
+   var canvas=document.createElement('canvas');
+   canvas.width=nw;canvas.height=nh;
+   canvas.getContext('2d').drawImage(img,0,0,nw,nh);
+   var isPNG=src.indexOf('data:image/png')===0;
+   db.company[key]=isPNG?canvas.toDataURL('image/png'):canvas.toDataURL('image/jpeg',0.85);
+   changed=true;
+   finish();
+  };
+  img.onerror=function(){finish();};
+  img.src=src;
+ });
+}
 
 // EXCEL
 function exportXLS(aoa,sname,fname){
@@ -1261,6 +1300,7 @@ function importBackupFile(file){
   db=normalizeDB(parsed);
   save();
   render();
+  upgradeSmallCompanyImages();
   alert(isAr?'✅ تم استعادة النسخة الاحتياطية بنجاح.':'✅ Backup restored successfully.');
  };
  reader.readAsText(file);
@@ -8972,6 +9012,7 @@ window.save=save;
 loadDB().then(function(loaded){
  db=loaded;
  render();
+ upgradeSmallCompanyImages();
  // Restore a trainee's session automatically if Firebase already has one
  // persisted for this browser (so they don't have to log in every single
  // time they open the app — this also doubles as a live re-check: if the
