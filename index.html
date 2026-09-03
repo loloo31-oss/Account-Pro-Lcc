@@ -620,16 +620,21 @@ function wireImageUploadField(inputId,dbField,maxW,maxH){
    var img=new Image();
    img.onload=function(){
     var w=img.width,h=img.height;
-    if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
-    if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
-    // Guard against a degenerate 0px canvas: an extreme-aspect-ratio source
-    // image (very wide-and-short, or tall-and-narrow) can round one side
-    // down to 0 here, which used to produce a technically non-empty but
-    // completely unusable/invisible data URI -- the stored image would
-    // then silently fail to render everywhere it's used (Settings preview,
-    // the Balance Confirmation Letter, etc.) with no visible sign why.
-    if(w<1)w=1;
-    if(h<1)h=1;
+    // Scale to FIT the maxW x maxH box, preserving aspect ratio -- in
+    // EITHER direction. The original code only ever scaled a source image
+    // DOWN when it exceeded the box; a small source (a tightly-cropped
+    // stamp or signature photo, e.g. 40x30px) was stored at its own tiny
+    // original size unchanged. That's what actually made stamps/signatures
+    // look "missing": the real image WAS there, just a few pixels across
+    // inside a much larger container everywhere it's displayed (Settings
+    // preview, the Balance Confirmation Letter) -- easy to mistake for a
+    // blank space or a rendering failure. Scaling up small sources too
+    // (capped at a sane 8x so a truly tiny/low-quality source doesn't blow
+    // up into an unusably blurry mess) keeps every upload a consistent,
+    // clearly-visible size.
+    var scale=Math.min(maxW/w,maxH/h,8);
+    w=Math.max(1,Math.round(w*scale));
+    h=Math.max(1,Math.round(h*scale));
     var canvas=document.createElement('canvas');
     canvas.width=w;canvas.height=h;
     var ctx=canvas.getContext('2d');
@@ -5917,7 +5922,10 @@ function pConfirmBalance(){
    // element, so cbOpenContact below resolves the contact itself.
    h+='<div class="card" style="max-width:720px"><div class="es">'
     +(isAr?'⚠️ لا يوجد حساب مرتبط بهذا '+(contact.__isSup?'المورد':'العميل')+' بعد — لا يمكن حساب الرصيد بدون ربط حساب من كشف الحسابات.':'⚠️ This '+(contact.__isSup?'supplier':'customer')+' has no linked account yet — a balance can\'t be computed without one.')
-    +'<div style="margin-top:10px"><button class="btn bdr bsm" data-action="cbOpenContact">'+(isAr?'فتح بطاقة الحساب لربطه':'Open account card to link one')+'</button></div>'
+    +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn bdr bsm" data-action="cbOpenContact">'+(isAr?'فتح بطاقة الحساب لربطه':'Open account card to link one')+'</button>'
+    +'<button class="btn bsm" data-action="cbCancel">✖ '+(isAr?'إلغاء':'Cancel')+'</button>'
+    +'</div>'
     +'</div></div>';
   } else {
    var acc=(db.accounts||[]).find(function(a){return a.id===contact.linkedAccId;});
@@ -5928,6 +5936,7 @@ function pConfirmBalance(){
     +'<button class="btn bp" data-action="cbPrintPDF">🖨️ '+(isAr?'معاينة / طباعة (PDF)':'Preview / Print (PDF)')+'</button>'
     +'<button class="btn bdr" data-action="cbExportWord">📝 '+(isAr?'تصدير Word':'Export Word')+'</button>'
     +'<button class="btn bdr" data-action="cbSendEmail"'+(!contact.email?' style="opacity:.5" title="'+(isAr?'لا يوجد بريد إلكتروني مسجل':'No email on file')+'"':'')+'>📧 '+(isAr?'إرسال بالبريد':'Send by Email')+'</button>'
+    +'<button class="btn bdr" data-action="cbCancel">✖ '+(isAr?'إلغاء':'Cancel')+'</button>'
     +'</div>'
     +(!contact.email?'<div style="font-size:11px;color:var(--t3);margin-top:8px">'+(isAr?'💡 لتفعيل زر الإرسال، أضِف بريدًا إلكترونيًا لهذا الحساب من بطاقته.':'💡 To enable Send by Email, add an email to this contact\'s card.')+'</div>':'')
     +'</div>';
@@ -6578,6 +6587,12 @@ window.xAction=function(type){
  if(type==='cbPrintPDF'){cbPrintPDF();return;}
  if(type==='cbExportWord'){cbExportWord();return;}
  if(type==='cbSendEmail'){cbSendEmail();return;}
+ if(type==='cbCancel'){
+  // Cancels the in-progress/just-generated Balance Confirmation Letter and
+  // returns to a clean search box — clears the resolved contact so no
+  // stale letter preview or "no linked account" warning stays on screen.
+  cbState.contactId='';render();return;
+ }
  if(type==='cbOpenContact'){
   var cbContact=findContactById(cbState.contactId);
   if(cbContact){
