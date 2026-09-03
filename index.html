@@ -571,6 +571,13 @@ function findContactById(id){
  if(s)return Object.assign({},s,{__isSup:true});
  return null;
 }
+// The letter's fixed bilingual title — used everywhere the letter is
+// presented (on-screen preview, the PDF/print header, the Word doc's own
+// <title>), regardless of the app's current UI language. Per the user's
+// explicit request, the LETTER ITSELF always carries both languages side by
+// side; only the surrounding app chrome (buttons, page labels, the search
+// box) still follows the current UI language like the rest of the app.
+var CONFIRM_LETTER_TITLE='خطاب مطابقة رصيد حساب / Account Balance Confirmation Letter';
 // Builds the letter's body HTML (no page chrome) — shared by the on-screen
 // preview, the PDF/print path (via printHTML, which adds the logo header),
 // and the Word export (which adds its own minimal header). `acc` is the
@@ -580,49 +587,89 @@ function findContactById(id){
 // bal+=cr-dr), so a negative bal means the balance has actually flipped to
 // the opposite side of the account's normal side — e.g. a receivable
 // (normal Debit) with a negative bal means the customer overpaid and is
-// effectively in credit, not debit.
-function confirmLetterBodyHtml(contact,acc,isAr){
- var co=db.company;
+// effectively in credit, not debit. That distinction isn't part of this
+// fixed template's own wording (it states a single balance figure), so it
+// isn't shown here — accBalanceEffective() below is kept in case a future
+// tweak wants to reintroduce it.
+function accBalanceEffective(acc){
  var bal=acc.bal||0;
  var effSide=acc.normal==='Debit'?(bal>=0?'Debit':'Credit'):(bal>=0?'Credit':'Debit');
- var amount=Math.abs(bal);
- var contactName=(isAr&&contact.nameAr?contact.nameAr:contact.name)||contact.id;
- var greeting=isAr?('السادة / '+contactName+' المحترمين'):('Dear '+contactName+',');
- var mainLine;
- if(amount<0.005){
-  mainLine=isAr
-   ?('نفيدكم بأنه لا يوجد رصيد مستحق على حسابكم لدينا بتاريخ '+today()+' (الرصيد: '+cur()+' 0.00)، وذلك وفقاً لسجلاتنا حتى تاريخه.')
-   :('We confirm that there is no outstanding balance on your account with us as of '+today()+' (balance: '+cur()+' 0.00), according to our records as of this date.');
- } else if(effSide==='Credit'){
-  mainLine=isAr
-   ?('نفيدكم بأن رصيدكم الدائن لدينا بتاريخ '+today()+' يبلغ <strong>'+cur()+' '+N(amount)+'</strong>، وذلك وفقاً لسجلاتنا حتى تاريخه.')
-   :('We confirm that your credit balance with us as of '+today()+' amounts to <strong>'+cur()+' '+N(amount)+'</strong>, according to our records as of this date.');
- } else {
-  mainLine=isAr
-   ?('نفيدكم بأن حسابكم المدين لدينا بتاريخ '+today()+' يبلغ <strong>'+cur()+' '+N(amount)+'</strong>، وذلك وفقاً لسجلاتنا حتى تاريخه.')
-   :('We confirm that your debit balance with us as of '+today()+' amounts to <strong>'+cur()+' '+N(amount)+'</strong>, according to our records as of this date.');
- }
- var closing=isAr
-  ?'نرجو التكرم بمراجعة الرصيد أعلاه والتوقيع أدناه إقراراً بصحته، أو موافاتنا بملاحظاتكم خلال خمسة عشر (15) يوماً من تاريخه. ولكم منا جزيل الشكر والتقدير.'
-  :'Kindly review the above balance and sign below to confirm its accuracy, or provide us with your remarks within fifteen (15) days from this date. Thank you for your cooperation.';
- var sigBlock='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:46pt;gap:20pt">'
-  +'<div style="text-align:center;min-width:120px">'
-   +(co.stamp?'<img src="'+co.stamp+'" style="height:80px;max-width:120px;object-fit:contain;display:block;margin:0 auto 4pt">':'&nbsp;')
-  +'</div>'
-  +'<div style="text-align:center;min-width:150px">'
-   +(co.signature?'<img src="'+co.signature+'" style="height:50px;max-width:150px;object-fit:contain;display:block;margin:0 auto 4pt">':'<div style="height:50px">&nbsp;</div>')
-   +'<div style="border-top:1pt solid #333;padding-top:4pt;font-size:9pt;font-weight:700">'+(isAr?'المدير المالي':'Financial Manager')+'</div>'
-  +'</div>'
- +'</div>';
- return '<div style="direction:'+(isAr?'rtl':'ltr')+';text-align:'+(isAr?'right':'left')+';line-height:2;font-size:11pt">'
-  +'<div style="text-align:'+(isAr?'left':'right')+';font-size:9pt;color:#666;margin-bottom:14pt">'+(isAr?'التاريخ: ':'Date: ')+today()+'</div>'
-  +'<div style="font-weight:700;margin-bottom:10pt">'+greeting+'</div>'
-  +'<div style="font-weight:700;text-decoration:underline;margin-bottom:12pt">'+(isAr?'الموضوع: خطاب مصادقة رصيد':'Subject: Balance Confirmation Letter')+'</div>'
-  +'<p>'+(isAr?'نهديكم أطيب التحيات، وبالإشارة إلى حسابكم لدينا،':'Greetings. With reference to your account with us,')+'</p>'
-  +'<p>'+mainLine+'</p>'
-  +'<p>'+closing+'</p>'
-  +sigBlock
+ return {side:effSide,amount:Math.abs(bal)};
+}
+function confirmLetterBodyHtml(contact,acc){
+ var co=db.company;
+ var amount=accBalanceEffective(acc).amount;
+ var d=new Date();
+ var dateStr=String(d.getDate()).padStart(2,'0')+' / '+String(d.getMonth()+1).padStart(2,'0')+' / '+d.getFullYear();
+ var nameEn=contact.name||contact.id;
+ var nameAr=contact.nameAr||contact.name||contact.id;
+ var curCode=cur(); // company's configured currency (e.g. "SAR")
+ var curArLabel=curCode==='SAR'?'ريال سعودي':curCode;
+ var amountFmt=N(amount);
+ var LTR='direction:ltr;text-align:left';
+ var RTL='direction:rtl;text-align:right';
+ var tdEn='style="'+LTR+';padding:9pt 10pt;border:1pt solid #ccc;vertical-align:top"';
+ var tdAr='style="'+RTL+';padding:9pt 10pt;border:1pt solid #ccc;vertical-align:top"';
+ function row(en,ar){return '<tr><td '+tdEn+'>'+en+'</td><td '+tdAr+'>'+ar+'</td></tr>';}
+ // Our own company's sign-off — Company name and (a default) Title are
+ // things we actually know; the signer's personal Name is left blank for
+ // manual entry, and Signature/Stamp embed the uploaded images when present
+ // (see pSettings()'s Company Stamp / Financial Manager Signature cards),
+ // otherwise fall back to a blank line for a physical signature.
+ var blank='...............................................';
+ var sigImg=co.signature?'<img src="'+co.signature+'" style="height:44px;max-width:150px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
+ var stampImg=co.stamp?'<img src="'+co.stamp+'" style="height:70px;max-width:110px;object-fit:contain;display:inline-block;vertical-align:middle">':blank;
+ var titleBlock='<div style="text-align:center;margin-bottom:16pt">'
+  +'<div style="font-size:15pt;font-weight:800;color:#0D3B6E">خطاب مطابقة رصيد حساب</div>'
+  +'<div style="font-size:13pt;font-weight:800;color:#0D3B6E;margin-top:2pt">ACCOUNT BALANCE CONFIRMATION LETTER</div>'
   +'</div>';
+ var table='<table style="width:100%;border-collapse:collapse;margin-bottom:18pt;font-size:10.5pt;line-height:1.7">'
+  +'<tr><th style="width:50%;background:#0D3B6E;color:#fff;padding:8pt 10pt;'+LTR+'">English – Left Side</th>'
+  +'<th style="width:50%;background:#0D3B6E;color:#fff;padding:8pt 10pt;'+RTL+'">العربية – Right Side</th></tr>'
+  +row('<strong>Date:</strong> '+dateStr,'<strong>التاريخ:</strong> '+dateStr)
+  +row('<strong>Dear Sirs,</strong><br>'+nameEn,'<strong>السادة/ '+nameAr+' المحترمين،</strong>')
+  +row('Greetings,','تحية طيبة وبعد،')
+  +row(
+   'We kindly request you to review, reconcile and confirm your account balance with our company as of <strong>'+dateStr+'</strong>, according to our accounting records and the attached statement of account. In case of any discrepancy or comments, please provide us with the relevant details to enable us to complete the reconciliation between both parties’ records.',
+   'نرجو منكم التكرم بمراجعة ومطابقة وتأكيد رصيد حسابكم لدى شركتنا كما هو في تاريخ <strong>'+dateStr+'</strong>، وفقًا لسجلاتنا المحاسبية وكشف الحساب المرفق. وفي حال وجود أي فروقات أو ملاحظات، يرجى تزويدنا بتفاصيلها، وذلك لاستكمال إجراءات المطابقة بين سجلات الطرفين.'
+  )
+  +row('<strong>Balance as per our records: '+curCode+' '+amountFmt+'</strong>','<strong>الرصيد حسب سجلاتنا: '+amountFmt+' '+curArLabel+'</strong>')
+  +row('Kindly sign and stamp below and return this letter to us as confirmation of the balance.','يرجى التكرم بالتوقيع والختم أدناه وإعادة الخطاب إلينا تأكيدًا لمطابقة الرصيد.')
+  +row('<strong>Yours faithfully,</strong>','<strong>وتفضلوا بقبول فائق الاحترام والتقدير،</strong>')
+  +row('<strong>Company:</strong> '+(co.name||''),'<strong>الشركة:</strong> '+(co.name||''))
+  +row('<strong>Name:</strong> '+blank,'<strong>الاسم:</strong> '+blank)
+  +row('<strong>Title:</strong> Financial Manager','<strong>المسمى الوظيفي:</strong> المدير المالي')
+  +row('<strong>Signature:</strong> '+sigImg,'<strong>التوقيع:</strong> '+sigImg)
+  +row('<strong>Company Stamp:</strong> '+stampImg,'<strong>ختم الشركة:</strong> '+stampImg)
+  +'</table>';
+ // The recipient's own acknowledgment — entirely blank/fillable by hand,
+ // stacked English-then-Arabic exactly as given (not a table, since it's
+ // meant to be filled and signed on paper, not just read).
+ var enAck='<div style="'+LTR+';margin-bottom:20pt;font-size:10.5pt;line-height:1.9">'
+  +'<div style="font-weight:800;font-size:12pt;margin-bottom:8pt">BALANCE CONFIRMATION</div>'
+  +'<p>We, the undersigned, confirm that the above balance <strong>agrees / does not agree</strong> with our records as of <strong>'+dateStr+'</strong>.</p>'
+  +'<p>☐ <strong>Confirmed</strong> &nbsp;&nbsp;&nbsp; ☐ <strong>Not Confirmed</strong></p>'
+  +'<p><strong>In case of discrepancy, please provide details:</strong><br>'+blank+blank+'</p>'
+  +'<p><strong>Company Name:</strong> '+blank+'<br>'
+  +'<strong>Authorized Person:</strong> '+blank+'<br>'
+  +'<strong>Title:</strong> '+blank+'<br>'
+  +'<strong>Signature:</strong> '+blank+'<br>'
+  +'<strong>Date:</strong> '+blank+'<br>'
+  +'<strong>Company Stamp:</strong> '+blank+'</p>'
+  +'</div>';
+ var arAck='<div style="'+RTL+';font-size:10.5pt;line-height:1.9">'
+  +'<div style="font-weight:800;font-size:12pt;margin-bottom:8pt">إقرار مطابقة الرصيد</div>'
+  +'<p>نقر نحن الموقعين أدناه بأن الرصيد المذكور أعلاه <strong>مطابق / غير مطابق</strong> لسجلاتنا حتى تاريخ <strong>'+dateStr+'</strong>.</p>'
+  +'<p>☐ <strong>مطابق</strong> &nbsp;&nbsp;&nbsp; ☐ <strong>غير مطابق</strong></p>'
+  +'<p><strong>في حالة عدم المطابقة، يرجى توضيح الفروقات:</strong><br>'+blank+blank+'</p>'
+  +'<p><strong>اسم الشركة:</strong> '+blank+'<br>'
+  +'<strong>اسم المسؤول:</strong> '+blank+'<br>'
+  +'<strong>المسمى الوظيفي:</strong> '+blank+'<br>'
+  +'<strong>التوقيع:</strong> '+blank+'<br>'
+  +'<strong>التاريخ:</strong> '+blank+'<br>'
+  +'<strong>ختم الشركة:</strong> '+blank+'</p>'
+  +'</div>';
+ return titleBlock+table+enAck+arAck;
 }
 // "Export to Word" the low-dependency way: an HTML file with Word's own XML
 // namespaces and a .doc extension — Word opens and renders this as a real
@@ -664,17 +711,17 @@ function cbLetterFilenameBase(contact){
 }
 function cbPrintPDF(){
  var r=cbCurrentLetter();if(!r||!r.acc)return;
- var isAr=lang==='ar';
- printHTML(isAr?'خطاب مصادقة رصيد':'Balance Confirmation Letter',confirmLetterBodyHtml(r.contact,r.acc,isAr));
+ printHTML(CONFIRM_LETTER_TITLE,confirmLetterBodyHtml(r.contact,r.acc));
 }
 function cbExportWord(){
  var r=cbCurrentLetter();if(!r||!r.acc)return;
- var isAr=lang==='ar';
- exportConfirmLetterWord(isAr?'خطاب مصادقة رصيد':'Balance Confirmation Letter',confirmLetterBodyHtml(r.contact,r.acc,isAr),cbLetterFilenameBase(r.contact));
+ exportConfirmLetterWord(CONFIRM_LETTER_TITLE,confirmLetterBodyHtml(r.contact,r.acc),cbLetterFilenameBase(r.contact));
 }
 function cbSendEmail(){
  var r=cbCurrentLetter();if(!r||!r.acc)return;
- var isAr=lang==='ar';
+ var isAr=lang==='ar'; // the letter itself is always bilingual; this still
+ // picks the language for OUR OWN short instruction message below, which
+ // isn't part of the formal letter text.
  if(!r.contact.email){alert(isAr?'لا يوجد بريد إلكتروني مسجل لهذا العميل/المورد. أضِفه أولاً من بطاقة الحساب.':'No email on file for this contact. Add one from their account card first.');return;}
  // Download the Word letter right now so there is a file ready to attach —
  // browsers do not let a mailto:/Gmail-compose link attach a file on its
@@ -682,8 +729,8 @@ function cbSendEmail(){
  // buttons elsewhere in this file). Both calls stay synchronous so the
  // window.open() below still counts as a direct result of this click and
  // isn't blocked as a popup (see the note on doLicSave for why that matters).
- exportConfirmLetterWord(isAr?'خطاب مصادقة رصيد':'Balance Confirmation Letter',confirmLetterBodyHtml(r.contact,r.acc,isAr),cbLetterFilenameBase(r.contact));
- var subject=encodeURIComponent((isAr?'خطاب مصادقة رصيد — ':'Balance Confirmation Letter — ')+(db.company.name||''));
+ exportConfirmLetterWord(CONFIRM_LETTER_TITLE,confirmLetterBodyHtml(r.contact,r.acc),cbLetterFilenameBase(r.contact));
+ var subject=encodeURIComponent(CONFIRM_LETTER_TITLE+' — '+(db.company.name||''));
  var msg=isAr
   ?('تحية طيبة،\n\nتم تنزيل خطاب مصادقة الرصيد الخاص بحسابكم لدينا على هذا الجهاز (ملف Word). الرجاء إرفاقه يدويًا فى هذه الرسالة قبل الإرسال.\n\nمع تحياتنا،\n'+(db.company.name||''))
   :('Dear Sir/Madam,\n\nYour balance confirmation letter has just been downloaded to this device (Word file). Please attach it manually to this email before sending.\n\nBest regards,\n'+(db.company.name||''));
@@ -5693,7 +5740,7 @@ function pConfirmBalance(){
     +'</div></div>';
   } else {
    var acc=(db.accounts||[]).find(function(a){return a.id===contact.linkedAccId;});
-   var bodyHtml=confirmLetterBodyHtml(contact,acc,isAr);
+   var bodyHtml=confirmLetterBodyHtml(contact,acc);
    h+='<div class="card" style="max-width:720px"><div class="ct">'+(isAr?'معاينة الخطاب':'Letter Preview')+'</div>'
     +'<div style="border:1px solid var(--bd2);border-radius:var(--r);padding:18px;background:#fff;color:#111">'+bodyHtml+'</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
